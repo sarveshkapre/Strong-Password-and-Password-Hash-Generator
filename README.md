@@ -1,4 +1,4 @@
-# Brute-Force
+# Strong Password and Password Hash Generator
 
 Brute-Force password file generation for 16 bytes alphanumeric characters and their corresponding hashes
 
