@@ -4,7 +4,7 @@ Brute-Force password file generation for 16 bytes alphanumeric characters and th
 
 Part I: (brute.c)
 
-There is a password system you want to break into.  The system accepts hashes of alphanumeric passwords consisting of up to 16 bytes.  This C program generates hashes of all possible passwords.  That is, the program will output all passwords with corresponding hashes.  
+The system accepts hashes of alphanumeric passwords consisting of up to 16 bytes.  This C program generates hashes of all possible passwords.  That is, the program will output all passwords with corresponding hashes.  
 
 
 Part II: (pass2hash.c)
