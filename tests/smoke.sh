@@ -65,6 +65,15 @@ if [[ "$line" != "$expected" ]]; then
   exit 1
 fi
 
+echo "[smoke] pass2hash --escape-tsv for tabbed passwords"
+printf $'a\tb\n' >"$tmp/tabpw.txt"
+line="$(./bin/pass2hash -i "$tmp/tabpw.txt" --algo sha256 --escape-tsv | head -n 1 | cut -f1)"
+[[ "$line" == 'a\tb' ]] || { echo "expected escaped tab field, got: $line"; exit 1; }
+
+echo "[smoke] pass2hash warns on raw tabs without --escape-tsv"
+./bin/pass2hash -i "$tmp/tabpw.txt" --algo sha256 >/dev/null 2>"$tmp/warn.txt"
+grep -qi "tab" "$tmp/warn.txt" || { echo "expected warning about TABs"; cat "$tmp/warn.txt"; exit 1; }
+
 echo "[smoke] pass2hash rejects non-numeric PBKDF2 flags"
 if ./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-hex 73616c74 --iterations 1x --dk-len 32 --format v2 >/dev/null 2>&1; then
   echo "expected pass2hash to fail for --iterations 1x"

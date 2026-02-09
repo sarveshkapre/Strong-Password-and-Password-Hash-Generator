@@ -72,6 +72,8 @@ Output format:
 password<TAB>algo<TAB>hash_hex<TAB>entropy_bits
 ```
 
+If your input passwords may contain tabs, the output TSV becomes ambiguous. Prefer `--omit-password` (safest) or `--escape-tsv` (escapes the password field with `\\t`, `\\n`, `\\r`, `\\\\`).
+
 If you are generating hashes for storage, prefer `--omit-password` to avoid emitting plaintext passwords in the output:
 
 ```sh

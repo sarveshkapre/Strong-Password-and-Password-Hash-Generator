@@ -103,7 +103,7 @@ static void usage(const char *argv0) {
           "Usage: %s [-i input.txt] [-o output.txt] [--append]\n"
           "          [--algo md5|sha1|sha256|sha512|pbkdf2-sha1|pbkdf2-sha256|pbkdf2-sha512]\n"
           "          (use -i - for stdin; -o - for stdout)\n"
-          "          [--omit-password]\n"
+          "          [--omit-password] [--escape-tsv]\n"
           "          [--iterations N] [--dk-len N] [--salt-len N | --salt-hex HEX] [--format v1|v2]\n"
           "\n"
           "Reads one password per line.\n"
@@ -111,6 +111,7 @@ static void usage(const char *argv0) {
           "Output format v1 (default for digest algos):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits\n"
           "  With --omit-password: algo<TAB>hash_hex<TAB>entropy_bits\n"
+          "  With --escape-tsv: password field uses backslash-escapes (\\t, \\n, \\r, \\\\).\n"
           "\n"
           "Output format v2 (automatic for PBKDF2 algos unless --format v1 is forced):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
@@ -150,6 +151,54 @@ static int parse_size_strict(const char *s, size_t min, size_t max,
     return -1;
   *out = (size_t)v;
   return 0;
+}
+
+static char *tsv_escape_alloc(const char *s) {
+  if (!s)
+    return NULL;
+
+  size_t n = 0;
+  int needs = 0;
+  for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+    if (*p == '\t' || *p == '\n' || *p == '\r' || *p == '\\') {
+      needs = 1;
+      n += 2;
+    } else {
+      n += 1;
+    }
+  }
+  if (!needs)
+    return NULL;
+
+  char *out = (char *)calloc(1, n + 1);
+  if (!out)
+    return NULL;
+  size_t w = 0;
+  for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+    if (*p == '\\') {
+      out[w++] = '\\';
+      out[w++] = '\\';
+      continue;
+    }
+    if (*p == '\t') {
+      out[w++] = '\\';
+      out[w++] = 't';
+      continue;
+    }
+    if (*p == '\n') {
+      out[w++] = '\\';
+      out[w++] = 'n';
+      continue;
+    }
+    if (*p == '\r') {
+      out[w++] = '\\';
+      out[w++] = 'r';
+      continue;
+    }
+    out[w++] = (char)*p;
+  }
+  out[w] = '\0';
+  return out;
 }
 
 static int parse_algo_or_kdf(const char *s, hash_mode_t *out_mode,
@@ -210,6 +259,7 @@ int main(int argc, char **argv)
   const char *output_path = NULL;
   int append = 0;
   int omit_password = 0;
+  int escape_tsv = 0;
   hash_mode_t mode = MODE_DIGEST;
   crypto_algo_t digest_algo = CRYPTO_ALGO_SHA256;
   crypto_algo_t pbkdf2_prf_algo = CRYPTO_ALGO_SHA256;
@@ -242,6 +292,10 @@ int main(int argc, char **argv)
     }
     if (strcmp(argv[i], "--omit-password") == 0) {
       omit_password = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--escape-tsv") == 0) {
+      escape_tsv = 1;
       continue;
     }
     if (strcmp(argv[i], "--algo") == 0 && i + 1 < argc) {
@@ -425,6 +479,7 @@ int main(int argc, char **argv)
   char *line = NULL;
   size_t line_cap = 0;
   ssize_t nread;
+  int warned_tabs = 0;
 
   while ((nread = getline(&line, &line_cap, in)) != -1) {
     (void)nread;
@@ -432,13 +487,28 @@ int main(int argc, char **argv)
     if (line[0] == '\0')
       continue;
 
+    if (!omit_password && !escape_tsv && !warned_tabs && strchr(line, '\t') != NULL) {
+      fprintf(stderr,
+              "Warning: input contains a TAB character; output TSV will be ambiguous. "
+              "Use --escape-tsv or --omit-password.\n");
+      warned_tabs = 1;
+    }
+
     double entropy = estimate_entropy_bits(line);
+    const char *pw_field = line;
+    char *pw_escaped = NULL;
+    if (!omit_password && escape_tsv) {
+      pw_escaped = tsv_escape_alloc(line);
+      if (pw_escaped)
+        pw_field = pw_escaped;
+    }
 
     if (mode == MODE_DIGEST) {
       char hash_hex[64 * 2 + 1];
       if (crypto_digest_hex(digest_algo, (const uint8_t *)line, strlen(line),
                             hash_hex, sizeof(hash_hex)) != 0) {
         fprintf(stderr, "Hashing failed for a line.\n");
+        free(pw_escaped);
         free(line);
         free(fixed_salt);
         if (!in_is_stdio)
@@ -450,7 +520,7 @@ int main(int argc, char **argv)
 
       if (outfmt == OUTFMT_V1) {
         if (!omit_password) {
-          fprintf(out, "%s\t%s\t%s\t%.2f\n", line, crypto_algo_name(digest_algo),
+          fprintf(out, "%s\t%s\t%s\t%.2f\n", pw_field, crypto_algo_name(digest_algo),
                   hash_hex, entropy);
         } else {
           fprintf(out, "%s\t%s\t%.2f\n", crypto_algo_name(digest_algo), hash_hex,
@@ -458,13 +528,14 @@ int main(int argc, char **argv)
         }
       } else {
         if (!omit_password) {
-          fprintf(out, "%s\t%s\t%s\t%.2f\t\t\t\n", line,
+          fprintf(out, "%s\t%s\t%s\t%.2f\t\t\t\n", pw_field,
                   crypto_algo_name(digest_algo), hash_hex, entropy);
         } else {
           fprintf(out, "%s\t%s\t%.2f\t\t\t\n", crypto_algo_name(digest_algo),
                   hash_hex, entropy);
         }
       }
+      free(pw_escaped);
       continue;
     }
 
@@ -477,6 +548,7 @@ int main(int argc, char **argv)
       tmp_salt = (uint8_t *)calloc(1, salt_len);
       if (!tmp_salt) {
         perror("calloc");
+        free(pw_escaped);
         free(line);
         if (!in_is_stdio)
           fclose(in);
@@ -487,6 +559,7 @@ int main(int argc, char **argv)
       if (crypto_random_bytes(tmp_salt, salt_len) != 0) {
         fprintf(stderr, "Salt generation failed.\n");
         free(tmp_salt);
+        free(pw_escaped);
         free(line);
         if (!in_is_stdio)
           fclose(in);
@@ -504,6 +577,7 @@ int main(int argc, char **argv)
       free(hash_hex);
       free(salt_hex);
       free(tmp_salt);
+      free(pw_escaped);
       free(line);
       free(fixed_salt);
       if (!in_is_stdio)
@@ -522,6 +596,7 @@ int main(int argc, char **argv)
       free(hash_hex);
       free(salt_hex);
       free(tmp_salt);
+      free(pw_escaped);
       free(line);
       free(fixed_salt);
       if (!in_is_stdio)
@@ -540,13 +615,14 @@ int main(int argc, char **argv)
     salt_hex[salt_len * 2] = '\0';
 
     if (!omit_password) {
-      fprintf(out, "%s\t%s\t%s\t%.2f\t%s\t%u\t%zu\n", line, algo_name, hash_hex,
+      fprintf(out, "%s\t%s\t%s\t%.2f\t%s\t%u\t%zu\n", pw_field, algo_name, hash_hex,
               entropy, salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
     } else {
       fprintf(out, "%s\t%s\t%.2f\t%s\t%u\t%zu\n", algo_name, hash_hex, entropy,
               salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
     }
 
+    free(pw_escaped);
     free(hash_hex);
     free(salt_hex);
     free(tmp_salt);
