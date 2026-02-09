@@ -36,10 +36,10 @@
 - [x] (P3) Refresh market-scan notes for this segment (password generation + password hashing/KDF) and keep links under “Insights” only. (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
 
 - Selected For This Session (Cycle 4):
-- [ ] (P0) Make `pass2hash` outputs safely parseable: add `--escape-tsv` (escape password field) plus a warning when passwords contain raw tabs without escaping; document behavior and add smoke coverage. (Impact: high, Effort: low, Strategic fit: high, Differentiation: medium, Risk: low, Confidence: high)
-- [ ] (P0) Make `pass2hash` pipe-friendly: support `-i -` (stdin) and `-o -` (stdout), keep current defaults, and add smoke coverage + README examples. (Impact: high, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
-- [ ] (P1) Harden `pass2hash` CLI validation: strict numeric parsing for PBKDF2 flags and reject PBKDF2-only flags in digest mode; bound `--salt-hex` decoded size to match `--salt-len` limits; add smoke coverage. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
-- [ ] (P1) Add `pass2hash --verify` mode to validate v1/v2 TSV lines (digest + PBKDF2 v2) and fail-fast on mismatch; support `--escape-tsv` for verifying escaped inputs; add smoke coverage + docs. (Impact: medium, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
+- [x] (P0) Make `pass2hash` outputs safely parseable: add `--escape-tsv` (escape password field) plus a warning when passwords contain raw tabs without escaping; document behavior and add smoke coverage. (Impact: high, Effort: low, Strategic fit: high, Differentiation: medium, Risk: low, Confidence: high)
+- [x] (P0) Make `pass2hash` pipe-friendly: support `-i -` (stdin) and `-o -` (stdout), keep current defaults, and add smoke coverage + README examples. (Impact: high, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [x] (P1) Harden `pass2hash` CLI validation: strict numeric parsing for PBKDF2 flags and reject PBKDF2-only flags in digest mode; bound `--salt-hex` decoded size to match `--salt-len` limits; add smoke coverage. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [x] (P1) Add `pass2hash --verify` mode to validate v1/v2 TSV lines (digest + PBKDF2 v2) and fail-fast on mismatch; support `--escape-tsv` for verifying escaped inputs; add smoke coverage + docs. (Impact: medium, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
 
 - [x] (P0) Reproducible builds + clean repo artifacts: add root `Makefile`, add `.gitignore`, and remove committed ELF binaries + generated outputs from git. (Impact: high, Effort: low, Risk: low, Confidence: high)
 - [x] (P0) Fix crypto portability: replace broken Apple/OpenSSL preprocessor logic and implement a small `crypto` module that supports macOS (CommonCrypto) and Linux (OpenSSL libcrypto) for digests + PBKDF2. (Impact: high, Effort: medium, Risk: medium, Confidence: medium)
@@ -62,6 +62,9 @@
 - 2026-02-09: Updated PBKDF2 default iterations to be PRF-specific and documented in `--help` + README. Evidence: `GitHub-Brute-Force/pass2hash.c`, `README.md`, `make test`. Commits: `89ce683`.
 - 2026-02-09: Added `pass2hash --omit-password` to avoid emitting plaintext passwords, with smoke coverage and README docs. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `a0b58f5`.
 - 2026-02-09: Hardened `pwgen` numeric flag parsing with strict validation/bounds and added smoke coverage. Evidence: `GitHub-Brute-Force/pwgen.c`, `tests/smoke.sh`, `make test`. Commits: `88f86f4`.
+- 2026-02-09: Made `pass2hash` pipe-friendly (`-i -`, `-o -`) and hardened PBKDF2 flag parsing/validation (strict numeric parsing, reject PBKDF2-only flags in digest mode, bound `--salt-hex`). Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `7db0133`.
+- 2026-02-09: Added `pass2hash --escape-tsv` plus a warning for raw TABs to keep TSV parseable, with smoke coverage and README notes. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `070e749`.
+- 2026-02-09: Added `pass2hash --verify` mode to validate v1/v2 TSV outputs (digest + PBKDF2 v2), including support for verifying escaped TSV inputs via `--escape-tsv`, with smoke coverage and docs. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `c57654b`.
 
 ## Insights
 - Baseline UX expectations (external references, treat as untrusted): configurable length, character classes, “avoid ambiguous/look-alike” option, optional “minimum digits/special” constraints (ideally kept low), and (optionally) passphrase mode.
@@ -74,6 +77,7 @@
 - https://www.lastpass.com/password-generator
 - https://keepass.info/help/base/pwgenerator.html
 - https://support.keepassium.com/docs/password-generator/
+- https://1password.com/password-generator/
 - https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
 - https://pages.nist.gov/800-63-4/sp800-63b.html
 
