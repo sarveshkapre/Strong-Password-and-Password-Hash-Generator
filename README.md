@@ -35,10 +35,22 @@ Hash a file of passwords (one per line):
 ./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256
 ```
 
+PBKDF2 (slow KDF, recommended if you are storing password hashes):
+
+```sh
+./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo pbkdf2-sha256 --format v2
+```
+
 Output format:
 
 ```
 password<TAB>algo<TAB>hash_hex<TAB>entropy_bits
+```
+
+PBKDF2 output format (`--format v2`):
+
+```
+password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len
 ```
 
 ## Security Notes
