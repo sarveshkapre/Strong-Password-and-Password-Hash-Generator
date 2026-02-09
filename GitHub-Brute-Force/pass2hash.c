@@ -113,7 +113,8 @@ static void usage(const char *argv0) {
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
           "\n"
           "Defaults: -i GitHub-Brute-Force/passwordfile.txt, --algo sha256, output to stdout.\n"
-          "PBKDF2 defaults: --iterations 310000, --dk-len 32, --salt-len 16.\n",
+          "PBKDF2 defaults: --dk-len 32, --salt-len 16, and --iterations depends on PRF:\n"
+          "  pbkdf2-sha1=1300000, pbkdf2-sha256=600000, pbkdf2-sha512=210000.\n",
           argv0);
 }
 
@@ -182,7 +183,8 @@ int main(int argc, char **argv)
   output_format_t outfmt = OUTFMT_V1;
   int format_set = 0;
 
-  uint32_t pbkdf2_iterations = 310000;
+  uint32_t pbkdf2_iterations = 0;
+  int iterations_set = 0;
   size_t pbkdf2_dk_len = 32;
   size_t pbkdf2_salt_len = 16;
   const char *salt_hex_arg = NULL;
@@ -218,6 +220,7 @@ int main(int argc, char **argv)
         return 2;
       }
       pbkdf2_iterations = (uint32_t)v;
+      iterations_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--dk-len") == 0 && i + 1 < argc) {
@@ -277,6 +280,28 @@ int main(int argc, char **argv)
     }
     if (!format_set)
       outfmt = OUTFMT_V2;
+
+    // Iterations default depends on the PRF.
+    if (!iterations_set) {
+      switch (pbkdf2_prf_algo) {
+      case CRYPTO_ALGO_SHA1:
+        pbkdf2_iterations = 1300000;
+        break;
+      case CRYPTO_ALGO_SHA256:
+        pbkdf2_iterations = 600000;
+        break;
+      case CRYPTO_ALGO_SHA512:
+        pbkdf2_iterations = 210000;
+        break;
+      default:
+        fprintf(stderr, "Unsupported PBKDF2 PRF.\n");
+        return 2;
+      }
+    }
+    if (pbkdf2_iterations == 0) {
+      fprintf(stderr, "Invalid PBKDF2 iterations.\n");
+      return 2;
+    }
   }
 
   FILE *in = fopen(input_path, "r");

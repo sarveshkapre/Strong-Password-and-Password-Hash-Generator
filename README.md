@@ -48,6 +48,8 @@ PBKDF2 (slow KDF, recommended if you are storing password hashes):
 ./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo pbkdf2-sha256 --format v2
 ```
 
+PBKDF2 defaults are shown in `./bin/pass2hash --help` (defaults vary by PRF; `pbkdf2-sha256` uses 600,000 iterations).
+
 Brute-force demo (educational; safe by default):
 
 ```sh
