@@ -1,12 +1,53 @@
 # Strong Password and Password Hash Generator
 
-Brute-Force password file generation for 16 bytes alphanumeric characters and their corresponding hashes
+Tools for generating strong passwords and hashing password lists (educational + utility).
 
-Part I: (brute.c)
+## Build
 
-The system accepts hashes of alphanumeric passwords consisting of up to 16 bytes.  This C program generates hashes of all possible passwords.  That is, the program will output all passwords with corresponding hashes.  
+macOS:
 
+```sh
+make
+```
 
-Part II: (pass2hash.c)
+Linux (Ubuntu/Debian):
 
-This program will use a dictionary to generate passwords and hashes.  Here, I have used a small password dictionary. It would work for a much larger dictionary (logic remains the same).  This program will also display the entropy for each password it generates.
+```sh
+sudo apt-get update
+sudo apt-get install -y libssl-dev
+make
+```
+
+Build outputs land in `./bin/`.
+
+## Usage
+
+Generate strong passwords (cryptographically secure RNG):
+
+```sh
+./bin/pwgen --length 32 --avoid-ambiguous
+./bin/pwgen --length 20 --count 5 --show-entropy
+```
+
+Hash a file of passwords (one per line):
+
+```sh
+./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256
+```
+
+Output format:
+
+```
+password<TAB>algo<TAB>hash_hex<TAB>entropy_bits
+```
+
+## Security Notes
+
+- `MD5` is included for compatibility and demos, but it is not suitable for protecting passwords.
+- If you are storing passwords, use a slow password hashing scheme (KDF) like PBKDF2, bcrypt, scrypt, or Argon2 with a unique salt per password.
+
+## Source Files
+
+- `GitHub-Brute-Force/pwgen.c`: password generator
+- `GitHub-Brute-Force/pass2hash.c`: hash a password list
+- `GitHub-Brute-Force/brute.c`: brute-force demo (not practical for large lengths)
