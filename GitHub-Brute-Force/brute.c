@@ -1,47 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if defined(__APPLE__)
-#define COMMON_DIGEST_FOR_OPENSSL
-#include <CommonCrypto/CommonDigest.h>
-#define SHA1 CC_SHA1
-#else
-#include <openssl/md5.h>
-#endif
 
-char *hashString(const char *str, int length) 
-{
-    int n;
-    MD5_CTX c;
-    unsigned char digest[16];
-    char *hash = (char*)malloc(33);
-
-    MD5_Init(&c);
-
-    while (length > 0) 
-    {
-        if (length > 512) 
-	{
-            MD5_Update(&c, str, 512);
-        }
-	else 
-	{
-            MD5_Update(&c, str, length);
-        }
-	
-        length -= 512;
-        str += 512;
-    }
-
-    MD5_Final(digest, &c);
-
-    for (n = 0; n < 16; ++n) 
-    {
-        snprintf(&(hash[n*2]), 16*2, "%02x", (unsigned int)digest[n]);
-    }
-
-    return hash;
-}
+#include "crypto.h"
 
 
 void permute(char *str,int l,int pos,int r);
@@ -75,20 +36,28 @@ void permute(char *str,int l,int pos,int r)
 void print_string(char *str,int r)
 {
   FILE *fp = fopen("log.txt","a+");
-  char temp[16]="";
+  char temp[17];
+  memset(temp, 0, sizeof(temp));
   int i;
-  for(i=0;i<r;i++)
-   {
-      temp[i]=str[i];
-   }
+  for(i=0;i<r && i<16;i++)
+  {
+    temp[i]=str[i];
+  }
      
-    char *output = hashString(temp, strlen(temp));
-        printf("Alphanumeric Password: %s, Hash Values: %s\n",temp, output);
+    char hash_hex[64 * 2 + 1];
+    if (crypto_digest_hex(CRYPTO_ALGO_SHA256, (const uint8_t *)temp, strlen(temp),
+                          hash_hex, sizeof(hash_hex)) != 0) {
+      fprintf(stderr, "Hashing failed.\n");
+      if (fp)
+        fclose(fp);
+      return;
+    }
+    printf("Alphanumeric Password: %s, Hash Values: %s\n",temp, hash_hex);
         
-    fprintf(fp,"Alphanumeric Password :  %s  ------------>  Hash Values :  %s",temp,output);
-    fprintf(fp,"\n");
-    free(output);
-    fflush(fp);
-    fclose(fp);
+    if (fp) {
+      fprintf(fp,"Alphanumeric Password :  %s  ------------>  Hash Values :  %s\n",temp,hash_hex);
+      fflush(fp);
+      fclose(fp);
+    }
   
 }
