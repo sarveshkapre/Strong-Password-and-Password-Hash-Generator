@@ -102,15 +102,18 @@ static void usage(const char *argv0) {
   fprintf(stderr,
           "Usage: %s [-i input.txt] [-o output.txt] [--append]\n"
           "          [--algo md5|sha1|sha256|sha512|pbkdf2-sha1|pbkdf2-sha256|pbkdf2-sha512]\n"
+          "          [--omit-password]\n"
           "          [--iterations N] [--dk-len N] [--salt-len N | --salt-hex HEX] [--format v1|v2]\n"
           "\n"
           "Reads one password per line.\n"
           "\n"
           "Output format v1 (default for digest algos):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits\n"
+          "  With --omit-password: algo<TAB>hash_hex<TAB>entropy_bits\n"
           "\n"
           "Output format v2 (automatic for PBKDF2 algos unless --format v1 is forced):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
+          "  With --omit-password: algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
           "\n"
           "Defaults: -i GitHub-Brute-Force/passwordfile.txt, --algo sha256, output to stdout.\n"
           "PBKDF2 defaults: --dk-len 32, --salt-len 16, and --iterations depends on PRF:\n"
@@ -175,6 +178,7 @@ int main(int argc, char **argv)
   const char *input_path = "GitHub-Brute-Force/passwordfile.txt";
   const char *output_path = NULL;
   int append = 0;
+  int omit_password = 0;
   hash_mode_t mode = MODE_DIGEST;
   crypto_algo_t digest_algo = CRYPTO_ALGO_SHA256;
   crypto_algo_t pbkdf2_prf_algo = CRYPTO_ALGO_SHA256;
@@ -200,6 +204,10 @@ int main(int argc, char **argv)
     }
     if (strcmp(argv[i], "--append") == 0) {
       append = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--omit-password") == 0) {
+      omit_password = 1;
       continue;
     }
     if (strcmp(argv[i], "--algo") == 0 && i + 1 < argc) {
@@ -377,11 +385,21 @@ int main(int argc, char **argv)
       }
 
       if (outfmt == OUTFMT_V1) {
-        fprintf(out, "%s\t%s\t%s\t%.2f\n", line, crypto_algo_name(digest_algo),
-                hash_hex, entropy);
+        if (!omit_password) {
+          fprintf(out, "%s\t%s\t%s\t%.2f\n", line, crypto_algo_name(digest_algo),
+                  hash_hex, entropy);
+        } else {
+          fprintf(out, "%s\t%s\t%.2f\n", crypto_algo_name(digest_algo), hash_hex,
+                  entropy);
+        }
       } else {
-        fprintf(out, "%s\t%s\t%s\t%.2f\t\t\t\n", line,
-                crypto_algo_name(digest_algo), hash_hex, entropy);
+        if (!omit_password) {
+          fprintf(out, "%s\t%s\t%s\t%.2f\t\t\t\n", line,
+                  crypto_algo_name(digest_algo), hash_hex, entropy);
+        } else {
+          fprintf(out, "%s\t%s\t%.2f\t\t\t\n", crypto_algo_name(digest_algo),
+                  hash_hex, entropy);
+        }
       }
       continue;
     }
@@ -453,8 +471,13 @@ int main(int argc, char **argv)
     }
     salt_hex[salt_len * 2] = '\0';
 
-    fprintf(out, "%s\t%s\t%s\t%.2f\t%s\t%u\t%zu\n", line, algo_name, hash_hex,
-            entropy, salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+    if (!omit_password) {
+      fprintf(out, "%s\t%s\t%s\t%.2f\t%s\t%u\t%zu\n", line, algo_name, hash_hex,
+              entropy, salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+    } else {
+      fprintf(out, "%s\t%s\t%.2f\t%s\t%u\t%zu\n", algo_name, hash_hex, entropy,
+              salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+    }
 
     free(hash_hex);
     free(salt_hex);

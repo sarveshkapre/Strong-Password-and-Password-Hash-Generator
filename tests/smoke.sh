@@ -47,6 +47,15 @@ if [[ "$line" != "$expected" ]]; then
   exit 1
 fi
 
+echo "[smoke] pass2hash --omit-password"
+line="$(./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --omit-password | head -n 1 | cut -f1-2)"
+expected=$'sha256\t5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
+if [[ "$line" != "$expected" ]]; then
+  echo "Expected: $expected"
+  echo "Got:      $line"
+  exit 1
+fi
+
 echo "[smoke] pass2hash pbkdf2-sha256 known vector (deterministic salt)"
 expected_pbkdf2_sha256="$(
 python3 - <<'PY'

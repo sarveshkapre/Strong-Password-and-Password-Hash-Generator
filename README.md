@@ -66,6 +66,12 @@ Output format:
 password<TAB>algo<TAB>hash_hex<TAB>entropy_bits
 ```
 
+If you are generating hashes for storage, prefer `--omit-password` to avoid emitting plaintext passwords in the output:
+
+```sh
+./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo pbkdf2-sha256 --format v2 --omit-password
+```
+
 PBKDF2 output format (`--format v2`):
 
 ```
