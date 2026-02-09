@@ -56,6 +56,35 @@ if [[ "$line" != "$expected" ]]; then
   exit 1
 fi
 
+echo "[smoke] pass2hash stdin/stdout via -"
+line="$(printf 'password\n' | ./bin/pass2hash -i - -o - --algo sha256 | head -n 1 | cut -f1-3)"
+expected=$'password\tsha256\t5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
+if [[ "$line" != "$expected" ]]; then
+  echo "Expected: $expected"
+  echo "Got:      $line"
+  exit 1
+fi
+
+echo "[smoke] pass2hash rejects non-numeric PBKDF2 flags"
+if ./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-hex 73616c74 --iterations 1x --dk-len 32 --format v2 >/dev/null 2>&1; then
+  echo "expected pass2hash to fail for --iterations 1x"
+  exit 1
+fi
+if ./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-hex 73616c74 --iterations 1 --dk-len 32x --format v2 >/dev/null 2>&1; then
+  echo "expected pass2hash to fail for --dk-len 32x"
+  exit 1
+fi
+if ./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-len 16x --format v2 >/dev/null 2>&1; then
+  echo "expected pass2hash to fail for --salt-len 16x"
+  exit 1
+fi
+
+echo "[smoke] pass2hash rejects PBKDF2-only flags in digest mode"
+if ./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --iterations 1 >/dev/null 2>&1; then
+  echo "expected pass2hash to fail for digest algo with --iterations"
+  exit 1
+fi
+
 echo "[smoke] pass2hash pbkdf2-sha256 known vector (deterministic salt)"
 expected_pbkdf2_sha256="$(
 python3 - <<'PY'

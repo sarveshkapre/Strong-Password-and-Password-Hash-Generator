@@ -42,6 +42,12 @@ Hash a file of passwords (one per line):
 ./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256
 ```
 
+Piping (stdin/stdout):
+
+```sh
+printf "password\n" | ./bin/pass2hash -i - --algo sha256
+```
+
 PBKDF2 (slow KDF, recommended if you are storing password hashes):
 
 ```sh

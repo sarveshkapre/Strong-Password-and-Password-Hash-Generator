@@ -102,6 +102,7 @@ static void usage(const char *argv0) {
   fprintf(stderr,
           "Usage: %s [-i input.txt] [-o output.txt] [--append]\n"
           "          [--algo md5|sha1|sha256|sha512|pbkdf2-sha1|pbkdf2-sha256|pbkdf2-sha512]\n"
+          "          (use -i - for stdin; -o - for stdout)\n"
           "          [--omit-password]\n"
           "          [--iterations N] [--dk-len N] [--salt-len N | --salt-hex HEX] [--format v1|v2]\n"
           "\n"
@@ -119,6 +120,36 @@ static void usage(const char *argv0) {
           "PBKDF2 defaults: --dk-len 32, --salt-len 16, and --iterations depends on PRF:\n"
           "  pbkdf2-sha1=1300000, pbkdf2-sha256=600000, pbkdf2-sha512=210000.\n",
           argv0);
+}
+
+static int parse_u32_strict(const char *s, uint32_t min, uint32_t max,
+                            uint32_t *out) {
+  if (!s || !*s || !out)
+    return -1;
+  errno = 0;
+  char *end = NULL;
+  unsigned long long v = strtoull(s, &end, 10);
+  if (errno != 0 || !end || *end != '\0')
+    return -1;
+  if (v < (unsigned long long)min || v > (unsigned long long)max)
+    return -1;
+  *out = (uint32_t)v;
+  return 0;
+}
+
+static int parse_size_strict(const char *s, size_t min, size_t max,
+                             size_t *out) {
+  if (!s || !*s || !out)
+    return -1;
+  errno = 0;
+  char *end = NULL;
+  unsigned long long v = strtoull(s, &end, 10);
+  if (errno != 0 || !end || *end != '\0')
+    return -1;
+  if (v < (unsigned long long)min || v > (unsigned long long)max)
+    return -1;
+  *out = (size_t)v;
+  return 0;
 }
 
 static int parse_algo_or_kdf(const char *s, hash_mode_t *out_mode,
@@ -190,8 +221,11 @@ int main(int argc, char **argv)
   uint32_t pbkdf2_iterations = 0;
   int iterations_set = 0;
   size_t pbkdf2_dk_len = 32;
+  int dk_len_set = 0;
   size_t pbkdf2_salt_len = 16;
+  int salt_len_set = 0;
   const char *salt_hex_arg = NULL;
+  int salt_hex_set = 0;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
@@ -221,38 +255,38 @@ int main(int argc, char **argv)
       continue;
     }
     if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc) {
-      errno = 0;
-      unsigned long v = strtoul(argv[++i], NULL, 10);
-      if (errno != 0 || v == 0 || v > 0xFFFFFFFFUL) {
+      uint32_t v = 0;
+      if (parse_u32_strict(argv[++i], 1, 0xFFFFFFFFu, &v) != 0) {
         fprintf(stderr, "Invalid --iterations value.\n");
         return 2;
       }
-      pbkdf2_iterations = (uint32_t)v;
+      pbkdf2_iterations = v;
       iterations_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--dk-len") == 0 && i + 1 < argc) {
-      errno = 0;
-      unsigned long v = strtoul(argv[++i], NULL, 10);
-      if (errno != 0 || v == 0 || v > 1024) {
+      size_t v = 0;
+      if (parse_size_strict(argv[++i], 1, 1024, &v) != 0) {
         fprintf(stderr, "Invalid --dk-len value (1..1024).\n");
         return 2;
       }
-      pbkdf2_dk_len = (size_t)v;
+      pbkdf2_dk_len = v;
+      dk_len_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--salt-len") == 0 && i + 1 < argc) {
-      errno = 0;
-      unsigned long v = strtoul(argv[++i], NULL, 10);
-      if (errno != 0 || v == 0 || v > 1024) {
+      size_t v = 0;
+      if (parse_size_strict(argv[++i], 1, 1024, &v) != 0) {
         fprintf(stderr, "Invalid --salt-len value (1..1024).\n");
         return 2;
       }
-      pbkdf2_salt_len = (size_t)v;
+      pbkdf2_salt_len = v;
+      salt_len_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--salt-hex") == 0 && i + 1 < argc) {
       salt_hex_arg = argv[++i];
+      salt_hex_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
@@ -278,6 +312,15 @@ int main(int argc, char **argv)
     fprintf(stderr, "Unknown argument: %s\n", argv[i]);
     usage(argv[0]);
     return 2;
+  }
+
+  if (mode == MODE_DIGEST) {
+    if (iterations_set || dk_len_set || salt_len_set || salt_hex_set) {
+      fprintf(stderr,
+              "PBKDF2-only flags (--iterations/--dk-len/--salt-len/--salt-hex) "
+              "require a PBKDF2 algo.\n");
+      return 2;
+    }
   }
 
   if (mode == MODE_PBKDF2) {
@@ -312,18 +355,26 @@ int main(int argc, char **argv)
     }
   }
 
-  FILE *in = fopen(input_path, "r");
-  if (!in) {
-    perror("Error opening input file");
-    return 1;
+  FILE *in = stdin;
+  int in_is_stdio = 1;
+  if (strcmp(input_path, "-") != 0) {
+    in = fopen(input_path, "r");
+    in_is_stdio = 0;
+    if (!in) {
+      perror("Error opening input file");
+      return 1;
+    }
   }
 
   FILE *out = stdout;
-  if (output_path) {
+  int out_is_stdio = 1;
+  if (output_path && strcmp(output_path, "-") != 0) {
     out = fopen(output_path, append ? "a" : "w");
+    out_is_stdio = 0;
     if (!out) {
       perror("Error opening output file");
-      fclose(in);
+      if (!in_is_stdio)
+        fclose(in);
       return 1;
     }
   }
@@ -333,16 +384,27 @@ int main(int argc, char **argv)
   if (salt_hex_arg) {
     if (parse_hex(salt_hex_arg, &fixed_salt, &fixed_salt_len) != 0) {
       fprintf(stderr, "Invalid --salt-hex value (must be even-length hex).\n");
-      fclose(in);
-      if (out != stdout)
+      if (!in_is_stdio)
+        fclose(in);
+      if (!out_is_stdio)
         fclose(out);
       return 2;
     }
     if (fixed_salt_len == 0) {
       fprintf(stderr, "--salt-hex must not be empty.\n");
       free(fixed_salt);
-      fclose(in);
-      if (out != stdout)
+      if (!in_is_stdio)
+        fclose(in);
+      if (!out_is_stdio)
+        fclose(out);
+      return 2;
+    }
+    if (fixed_salt_len > 1024) {
+      fprintf(stderr, "--salt-hex decoded length must be <= 1024 bytes.\n");
+      free(fixed_salt);
+      if (!in_is_stdio)
+        fclose(in);
+      if (!out_is_stdio)
         fclose(out);
       return 2;
     }
@@ -352,8 +414,9 @@ int main(int argc, char **argv)
     size_t digest_len = crypto_digest_size(digest_algo);
     if (digest_len == 0) {
       fprintf(stderr, "Internal error: unknown digest size.\n");
-      fclose(in);
-      if (out != stdout)
+      if (!in_is_stdio)
+        fclose(in);
+      if (!out_is_stdio)
         fclose(out);
       return 1;
     }
@@ -378,8 +441,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "Hashing failed for a line.\n");
         free(line);
         free(fixed_salt);
-        fclose(in);
-        if (out != stdout)
+        if (!in_is_stdio)
+          fclose(in);
+        if (!out_is_stdio)
           fclose(out);
         return 1;
       }
@@ -414,8 +478,9 @@ int main(int argc, char **argv)
       if (!tmp_salt) {
         perror("calloc");
         free(line);
-        fclose(in);
-        if (out != stdout)
+        if (!in_is_stdio)
+          fclose(in);
+        if (!out_is_stdio)
           fclose(out);
         return 1;
       }
@@ -423,8 +488,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "Salt generation failed.\n");
         free(tmp_salt);
         free(line);
-        fclose(in);
-        if (out != stdout)
+        if (!in_is_stdio)
+          fclose(in);
+        if (!out_is_stdio)
           fclose(out);
         return 1;
       }
@@ -440,8 +506,9 @@ int main(int argc, char **argv)
       free(tmp_salt);
       free(line);
       free(fixed_salt);
-      fclose(in);
-      if (out != stdout)
+      if (!in_is_stdio)
+        fclose(in);
+      if (!out_is_stdio)
         fclose(out);
       return 1;
     }
@@ -457,8 +524,9 @@ int main(int argc, char **argv)
       free(tmp_salt);
       free(line);
       free(fixed_salt);
-      fclose(in);
-      if (out != stdout)
+      if (!in_is_stdio)
+        fclose(in);
+      if (!out_is_stdio)
         fclose(out);
       return 1;
     }
@@ -487,8 +555,9 @@ int main(int argc, char **argv)
   free(line);
   free(fixed_salt);
 
-  fclose(in);
-  if (out != stdout)
+  if (!in_is_stdio)
+    fclose(in);
+  if (!out_is_stdio)
     fclose(out);
   return 0;
 }

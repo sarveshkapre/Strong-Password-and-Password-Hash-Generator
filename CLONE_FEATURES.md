@@ -35,6 +35,12 @@
 - [x] (P2) Harden `pwgen` numeric flag parsing (`--length`, `--count`) with strict validation and sane bounds to avoid accidental huge allocations/outputs; add smoke coverage for invalid values. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
 - [x] (P3) Refresh market-scan notes for this segment (password generation + password hashing/KDF) and keep links under “Insights” only. (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
 
+- Selected For This Session (Cycle 4):
+- [ ] (P0) Make `pass2hash` outputs safely parseable: add `--escape-tsv` (escape password field) plus a warning when passwords contain raw tabs without escaping; document behavior and add smoke coverage. (Impact: high, Effort: low, Strategic fit: high, Differentiation: medium, Risk: low, Confidence: high)
+- [ ] (P0) Make `pass2hash` pipe-friendly: support `-i -` (stdin) and `-o -` (stdout), keep current defaults, and add smoke coverage + README examples. (Impact: high, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P1) Harden `pass2hash` CLI validation: strict numeric parsing for PBKDF2 flags and reject PBKDF2-only flags in digest mode; bound `--salt-hex` decoded size to match `--salt-len` limits; add smoke coverage. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P1) Add `pass2hash --verify` mode to validate v1/v2 TSV lines (digest + PBKDF2 v2) and fail-fast on mismatch; support `--escape-tsv` for verifying escaped inputs; add smoke coverage + docs. (Impact: medium, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
+
 - [x] (P0) Reproducible builds + clean repo artifacts: add root `Makefile`, add `.gitignore`, and remove committed ELF binaries + generated outputs from git. (Impact: high, Effort: low, Risk: low, Confidence: high)
 - [x] (P0) Fix crypto portability: replace broken Apple/OpenSSL preprocessor logic and implement a small `crypto` module that supports macOS (CommonCrypto) and Linux (OpenSSL libcrypto) for digests + PBKDF2. (Impact: high, Effort: medium, Risk: medium, Confidence: medium)
 - [x] (P0) Harden `pass2hash`: correct file-reading loop (no `feof`), trim newlines, close/free resources, avoid infinite growth of output file, and add CLI flags for input/output paths + algorithm selection. (Impact: high, Effort: low, Risk: low, Confidence: high)
