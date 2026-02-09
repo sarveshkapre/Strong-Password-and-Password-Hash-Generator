@@ -86,6 +86,13 @@ PBKDF2 output format (`--format v2`):
 password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len
 ```
 
+Verify an output TSV (recompute and compare, exits non-zero on mismatch):
+
+```sh
+./bin/pass2hash --verify -i hashes.tsv
+./bin/pass2hash --verify -i hashes.tsv --escape-tsv
+```
+
 ## Security Notes
 
 - `MD5` is included for compatibility and demos, but it is not suitable for protecting passwords.

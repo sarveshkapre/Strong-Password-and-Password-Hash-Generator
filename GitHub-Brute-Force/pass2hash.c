@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,8 +106,10 @@ static void usage(const char *argv0) {
           "          (use -i - for stdin; -o - for stdout)\n"
           "          [--omit-password] [--escape-tsv]\n"
           "          [--iterations N] [--dk-len N] [--salt-len N | --salt-hex HEX] [--format v1|v2]\n"
+          "       %s --verify [-i input.tsv] [--escape-tsv]\n"
           "\n"
           "Reads one password per line.\n"
+          "With --verify, reads TSV output and recomputes hashes (fails fast on mismatch).\n"
           "\n"
           "Output format v1 (default for digest algos):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits\n"
@@ -120,7 +123,7 @@ static void usage(const char *argv0) {
           "Defaults: -i GitHub-Brute-Force/passwordfile.txt, --algo sha256, output to stdout.\n"
           "PBKDF2 defaults: --dk-len 32, --salt-len 16, and --iterations depends on PRF:\n"
           "  pbkdf2-sha1=1300000, pbkdf2-sha256=600000, pbkdf2-sha512=210000.\n",
-          argv0);
+          argv0, argv0);
 }
 
 static int parse_u32_strict(const char *s, uint32_t min, uint32_t max,
@@ -201,6 +204,256 @@ static char *tsv_escape_alloc(const char *s) {
   return out;
 }
 
+static int tsv_unescape_inplace(char *s) {
+  if (!s)
+    return -1;
+  size_t w = 0;
+  for (size_t r = 0; s[r] != '\0'; r++) {
+    if (s[r] != '\\') {
+      s[w++] = s[r];
+      continue;
+    }
+    r++;
+    if (s[r] == '\0')
+      return -1;
+    switch (s[r]) {
+    case '\\':
+      s[w++] = '\\';
+      break;
+    case 't':
+      s[w++] = '\t';
+      break;
+    case 'n':
+      s[w++] = '\n';
+      break;
+    case 'r':
+      s[w++] = '\r';
+      break;
+    default:
+      return -1;
+    }
+  }
+  s[w] = '\0';
+  return 0;
+}
+
+static int normalize_hex_lower_inplace(char *s) {
+  if (!s)
+    return -1;
+  for (size_t i = 0; s[i] != '\0'; i++) {
+    int v = hexval((unsigned char)s[i]);
+    if (v < 0)
+      return -1;
+    s[i] = (char)tolower((unsigned char)s[i]);
+  }
+  return 0;
+}
+
+static size_t tsv_split_fields_inplace(char *line, char **fields,
+                                       size_t max_fields) {
+  if (!line || !fields || max_fields == 0)
+    return 0;
+  size_t n = 0;
+  fields[n++] = line;
+  for (char *p = line; *p != '\0'; p++) {
+    if (*p != '\t')
+      continue;
+    *p = '\0';
+    if (n >= max_fields)
+      break;
+    fields[n++] = p + 1;
+  }
+  return n;
+}
+
+static int verify_tsv_stream(FILE *in, int escaped_input) {
+  if (!in)
+    return 1;
+
+  char *line = NULL;
+  size_t cap = 0;
+  ssize_t nread;
+  uint64_t lineno = 0;
+
+  while ((nread = getline(&line, &cap, in)) != -1) {
+    (void)nread;
+    lineno++;
+    rstrip_newlines(line);
+    if (line[0] == '\0')
+      continue;
+
+    char *fields[8];
+    size_t nf = tsv_split_fields_inplace(line, fields, 8);
+    if (nf == 3 || nf == 6) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": password is omitted.\n",
+              lineno);
+      free(line);
+      return 2;
+    }
+    if (nf != 4 && nf != 7) {
+      fprintf(stderr,
+              "Verify error on line %" PRIu64 ": expected v1 (4 cols) or v2 (7 cols), got %zu.\n",
+              lineno, nf);
+      free(line);
+      return 2;
+    }
+
+    char *pw = fields[0];
+    char *algo = fields[1];
+    char *hash_hex = fields[2];
+
+    if (escaped_input) {
+      if (tsv_unescape_inplace(pw) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": invalid escapes.\n",
+                lineno);
+        free(line);
+        return 2;
+      }
+    }
+
+    if (normalize_hex_lower_inplace(hash_hex) != 0) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": invalid hash hex.\n",
+              lineno);
+      free(line);
+      return 2;
+    }
+
+    // PBKDF2 v2: pw\tpbkdf2-...\thash\tentropy\tsalt_hex\titerations\tdk_len
+    if (strncmp(algo, "pbkdf2-", 7) == 0) {
+      if (nf != 7) {
+        fprintf(stderr,
+                "Verify error on line %" PRIu64 ": PBKDF2 requires v2 format.\n",
+                lineno);
+        free(line);
+        return 2;
+      }
+      const char *prf_name = algo + 7;
+      crypto_algo_t prf_algo;
+      if (crypto_parse_algo(prf_name, &prf_algo) != 0 ||
+          prf_algo == CRYPTO_ALGO_MD5) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": invalid PBKDF2 algo.\n",
+                lineno);
+        free(line);
+        return 2;
+      }
+
+      char *salt_hex = fields[4];
+      char *iters_s = fields[5];
+      char *dklen_s = fields[6];
+      if (!salt_hex || salt_hex[0] == '\0' || !iters_s || iters_s[0] == '\0' ||
+          !dklen_s || dklen_s[0] == '\0') {
+        fprintf(stderr,
+                "Verify error on line %" PRIu64 ": missing PBKDF2 parameters.\n",
+                lineno);
+        free(line);
+        return 2;
+      }
+
+      uint32_t iters = 0;
+      if (parse_u32_strict(iters_s, 1, 0xFFFFFFFFu, &iters) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad iterations.\n",
+                lineno);
+        free(line);
+        return 2;
+      }
+      size_t dk_len = 0;
+      if (parse_size_strict(dklen_s, 1, 1024, &dk_len) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad dk_len.\n", lineno);
+        free(line);
+        return 2;
+      }
+
+      if (strlen(hash_hex) != dk_len * 2) {
+        fprintf(stderr,
+                "Verify error on line %" PRIu64 ": hash length mismatch for dk_len.\n",
+                lineno);
+        free(line);
+        return 2;
+      }
+
+      uint8_t *salt = NULL;
+      size_t salt_len = 0;
+      if (parse_hex(salt_hex, &salt, &salt_len) != 0 || salt_len == 0 ||
+          salt_len > 1024) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad salt hex.\n",
+                lineno);
+        free(salt);
+        free(line);
+        return 2;
+      }
+
+      char *computed = (char *)calloc(1, dk_len * 2 + 1);
+      if (!computed) {
+        perror("calloc");
+        free(salt);
+        free(line);
+        return 1;
+      }
+      if (crypto_pbkdf2_hex(prf_algo, pw, salt, salt_len, iters, dk_len,
+                            computed, dk_len * 2 + 1) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": PBKDF2 failed.\n",
+                lineno);
+        free(computed);
+        free(salt);
+        free(line);
+        return 1;
+      }
+      if (strcmp(computed, hash_hex) != 0) {
+        fprintf(stderr, "Verify mismatch on line %" PRIu64 ".\n", lineno);
+        free(computed);
+        free(salt);
+        free(line);
+        return 4;
+      }
+      free(computed);
+      free(salt);
+      continue;
+    }
+
+    crypto_algo_t d_algo;
+    if (crypto_parse_algo(algo, &d_algo) != 0) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": invalid algo.\n", lineno);
+      free(line);
+      return 2;
+    }
+    size_t dlen = crypto_digest_size(d_algo);
+    if (dlen == 0) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": invalid digest.\n",
+              lineno);
+      free(line);
+      return 2;
+    }
+    if (strlen(hash_hex) != dlen * 2) {
+      fprintf(stderr,
+              "Verify error on line %" PRIu64 ": digest length mismatch.\n",
+              lineno);
+      free(line);
+      return 2;
+    }
+
+    char computed[64 * 2 + 1];
+    if (crypto_digest_hex(d_algo, (const uint8_t *)pw, strlen(pw), computed,
+                          sizeof(computed)) != 0) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": digest failed.\n",
+              lineno);
+      free(line);
+      return 1;
+    }
+    if (strcmp(computed, hash_hex) != 0) {
+      fprintf(stderr, "Verify mismatch on line %" PRIu64 ".\n", lineno);
+      free(line);
+      return 4;
+    }
+  }
+
+  free(line);
+  if (ferror(in)) {
+    fprintf(stderr, "Verify error: failed reading input.\n");
+    return 1;
+  }
+  return 0;
+}
+
 static int parse_algo_or_kdf(const char *s, hash_mode_t *out_mode,
                              crypto_algo_t *out_digest_algo,
                              crypto_algo_t *out_prf_algo,
@@ -257,13 +510,16 @@ int main(int argc, char **argv)
 {
   const char *input_path = "GitHub-Brute-Force/passwordfile.txt";
   const char *output_path = NULL;
+  int output_set = 0;
   int append = 0;
   int omit_password = 0;
   int escape_tsv = 0;
+  int verify = 0;
   hash_mode_t mode = MODE_DIGEST;
   crypto_algo_t digest_algo = CRYPTO_ALGO_SHA256;
   crypto_algo_t pbkdf2_prf_algo = CRYPTO_ALGO_SHA256;
   const char *algo_name = "sha256";
+  int algo_set = 0;
 
   output_format_t outfmt = OUTFMT_V1;
   int format_set = 0;
@@ -278,12 +534,17 @@ int main(int argc, char **argv)
   int salt_hex_set = 0;
 
   for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--verify") == 0) {
+      verify = 1;
+      continue;
+    }
     if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
       input_path = argv[++i];
       continue;
     }
     if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
       output_path = argv[++i];
+      output_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--append") == 0) {
@@ -300,6 +561,7 @@ int main(int argc, char **argv)
     }
     if (strcmp(argv[i], "--algo") == 0 && i + 1 < argc) {
       const char *val = argv[++i];
+      algo_set = 1;
       if (parse_algo_or_kdf(val, &mode, &digest_algo, &pbkdf2_prf_algo,
                             &algo_name) != 0) {
         fprintf(stderr, "Unsupported --algo value.\n");
@@ -366,6 +628,34 @@ int main(int argc, char **argv)
     fprintf(stderr, "Unknown argument: %s\n", argv[i]);
     usage(argv[0]);
     return 2;
+  }
+
+  if (verify) {
+    if (omit_password) {
+      fprintf(stderr, "--verify requires password column; do not use --omit-password.\n");
+      return 2;
+    }
+    if (output_set || append || algo_set || format_set || iterations_set ||
+        dk_len_set || salt_len_set || salt_hex_set) {
+      fprintf(stderr,
+              "--verify does not accept output/algo/format/PBKDF2 parameter flags.\n");
+      return 2;
+    }
+
+    FILE *vin = stdin;
+    int vin_is_stdio = 1;
+    if (strcmp(input_path, "-") != 0) {
+      vin = fopen(input_path, "r");
+      vin_is_stdio = 0;
+      if (!vin) {
+        perror("Error opening input file");
+        return 1;
+      }
+    }
+    int rc = verify_tsv_stream(vin, escape_tsv);
+    if (!vin_is_stdio)
+      fclose(vin);
+    return rc;
   }
 
   if (mode == MODE_DIGEST) {

@@ -118,6 +118,34 @@ if ./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-hex 73616c74 --i
   exit 1
 fi
 
+echo "[smoke] pass2hash --verify (pbkdf2 v2)"
+out_tsv="$tmp/out.tsv"
+./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-hex 73616c74 --iterations 1 --dk-len 32 --format v2 >"$out_tsv"
+./bin/pass2hash --verify -i "$out_tsv" >/dev/null
+
+echo "[smoke] pass2hash --verify (escaped TSV)"
+esc_tsv="$tmp/escaped.tsv"
+./bin/pass2hash -i "$tmp/tabpw.txt" --algo sha256 --escape-tsv >"$esc_tsv"
+./bin/pass2hash --verify -i "$esc_tsv" --escape-tsv >/dev/null
+
+echo "[smoke] pass2hash --verify detects mismatches"
+bad_tsv="$tmp/bad.tsv"
+python3 - <<PY
+import pathlib
+src_path = pathlib.Path("$out_tsv")
+lines = src_path.read_text(encoding="utf-8").splitlines()
+fields = lines[0].split("\\t")
+assert len(fields) >= 3
+h = fields[2]
+fields[2] = h[:-1] + ("0" if h[-1] != "0" else "1")
+lines[0] = "\\t".join(fields)
+pathlib.Path("$bad_tsv").write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+PY
+if ./bin/pass2hash --verify -i "$bad_tsv" >/dev/null 2>&1; then
+  echo "expected --verify to fail on mismatched hash"
+  exit 1
+fi
+
 echo "[smoke] pwgen length/ambiguity"
 ambiguous_re='[O0Il1]'
 while IFS= read -r pw; do
