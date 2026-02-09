@@ -12,6 +12,27 @@ echo "[smoke] build"
 make -s clean
 make -s -j4
 
+echo "[smoke] brute requires explicit limits"
+if ./bin/brute >/dev/null 2>&1; then
+  echo "expected brute to fail without --length/--max"
+  exit 1
+fi
+
+echo "[smoke] brute does not write log.txt by default"
+rm -f log.txt
+./bin/brute --length 1 --max 2 --charset digits >/dev/null
+[[ ! -f log.txt ]] || { echo "unexpected log.txt created"; exit 1; }
+
+echo "[smoke] brute target match (sha256 of '0')"
+expected_brute_sha256="$(
+python3 - <<'PY'
+import hashlib
+print(hashlib.sha256(b"0").hexdigest())
+PY
+)"
+found="$(./bin/brute --length 1 --max 20 --charset digits --algo sha256 --target-hex "$expected_brute_sha256" | head -n 1 | cut -f1)"
+[[ "$found" == "0" ]] || { echo "expected to find '0', got: $found"; exit 1; }
+
 echo "[smoke] pass2hash sha256 known vector"
 cat >"$tmp/in.txt" <<'EOF'
 password

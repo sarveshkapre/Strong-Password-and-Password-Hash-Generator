@@ -48,6 +48,16 @@ PBKDF2 (slow KDF, recommended if you are storing password hashes):
 ./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo pbkdf2-sha256 --format v2
 ```
 
+Brute-force demo (educational; safe by default):
+
+```sh
+# Print the first 100 3-digit candidates (and their hashes).
+./bin/brute --length 3 --max 100 --charset digits
+
+# Match mode: stop on the first hash match (exits 0 if found, 3 if not found).
+./bin/brute --length 1 --max 20 --charset digits --algo sha256 --target-hex <hash_hex>
+```
+
 Output format:
 
 ```
@@ -69,4 +79,4 @@ password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>
 
 - `GitHub-Brute-Force/pwgen.c`: password generator
 - `GitHub-Brute-Force/pass2hash.c`: hash a password list
-- `GitHub-Brute-Force/brute.c`: brute-force demo (not practical for large lengths)
+- `GitHub-Brute-Force/brute.c`: brute-force demo (educational; requires explicit limits)
