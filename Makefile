@@ -14,7 +14,7 @@ endif
 
 .PHONY: all clean test
 
-all: $(BIN_DIR)/pass2hash $(BIN_DIR)/brute
+all: $(BIN_DIR)/pass2hash $(BIN_DIR)/pwgen $(BIN_DIR)/brute
 
 $(BIN_DIR):
 	@mkdir -p $@
@@ -25,9 +25,11 @@ $(BIN_DIR)/pass2hash: $(SRC_DIR)/pass2hash.c $(SRC_DIR)/crypto.c $(SRC_DIR)/cryp
 $(BIN_DIR)/brute: $(SRC_DIR)/brute.c $(SRC_DIR)/crypto.c $(SRC_DIR)/crypto.h | $(BIN_DIR)
 	$(CC) $(CFLAGS) -I$(SRC_DIR) $(SRC_DIR)/brute.c $(SRC_DIR)/crypto.c -o $@ $(LDLIBS)
 
+$(BIN_DIR)/pwgen: $(SRC_DIR)/pwgen.c $(SRC_DIR)/crypto.c $(SRC_DIR)/crypto.h | $(BIN_DIR)
+	$(CC) $(CFLAGS) -I$(SRC_DIR) $(SRC_DIR)/pwgen.c $(SRC_DIR)/crypto.c -o $@ $(LDLIBS)
+
 test: all
-	@echo "No tests yet. See planned work in CLONE_FEATURES.md."
+	./tests/smoke.sh
 
 clean:
 	rm -rf $(BIN_DIR) *.o $(SRC_DIR)/*.o
-
