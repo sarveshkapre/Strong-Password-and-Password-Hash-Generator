@@ -106,6 +106,20 @@ charlie
 delta
 EOF
 
+echo "[smoke] pwgen rejects non-numeric values"
+if ./bin/pwgen --length 20x >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --length 20x"
+  exit 1
+fi
+if ./bin/pwgen --count 2x >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --count 2x"
+  exit 1
+fi
+if ./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --words 4x >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --words 4x"
+  exit 1
+fi
+
 allowed_re='^(alpha|bravo|charlie|delta)$'
 while IFS= read -r phrase; do
   IFS='-' read -r w1 w2 w3 w4 <<<"$phrase"

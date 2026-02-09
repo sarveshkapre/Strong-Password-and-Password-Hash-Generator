@@ -24,6 +24,20 @@ static void usage(const char *argv0) {
           argv0, argv0);
 }
 
+static int parse_size_strict(const char *s, size_t min, size_t max, size_t *out) {
+  if (!s || !*s || !out)
+    return -1;
+  errno = 0;
+  char *end = NULL;
+  unsigned long long v = strtoull(s, &end, 10);
+  if (errno != 0 || !end || *end != '\0')
+    return -1;
+  if (v < (unsigned long long)min || v > (unsigned long long)max)
+    return -1;
+  *out = (size_t)v;
+  return 0;
+}
+
 static int rand_u32(uint32_t *out) {
   uint8_t b[4];
   if (crypto_random_bytes(b, sizeof(b)) != 0)
@@ -235,11 +249,17 @@ int main(int argc, char **argv) {
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--length") == 0 && i + 1 < argc) {
-      length = (size_t)strtoul(argv[++i], NULL, 10);
+      if (parse_size_strict(argv[++i], 1, 4096, &length) != 0) {
+        fprintf(stderr, "Invalid --length value (1..4096).\n");
+        return 2;
+      }
       continue;
     }
     if (strcmp(argv[i], "--count") == 0 && i + 1 < argc) {
-      count = (size_t)strtoul(argv[++i], NULL, 10);
+      if (parse_size_strict(argv[++i], 1, 100000, &count) != 0) {
+        fprintf(stderr, "Invalid --count value (1..100000).\n");
+        return 2;
+      }
       continue;
     }
     if (strcmp(argv[i], "--lower") == 0) {
@@ -299,13 +319,10 @@ int main(int argc, char **argv) {
       continue;
     }
     if (strcmp(argv[i], "--words") == 0 && i + 1 < argc) {
-      errno = 0;
-      unsigned long v = strtoul(argv[++i], NULL, 10);
-      if (errno != 0 || v == 0 || v > 64) {
+      if (parse_size_strict(argv[++i], 1, 64, &words) != 0) {
         fprintf(stderr, "Invalid --words value (1..64).\n");
         return 2;
       }
-      words = (size_t)v;
       continue;
     }
     if (strcmp(argv[i], "--separator") == 0 && i + 1 < argc) {
