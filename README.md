@@ -29,6 +29,13 @@ Generate strong passwords (cryptographically secure RNG):
 ./bin/pwgen --length 20 --count 5 --show-entropy
 ```
 
+Generate passphrases (wordlist-based):
+
+```sh
+./bin/pwgen --passphrase --wordlist examples/wordlist.example.txt --words 4 --separator - --show-entropy
+./bin/pwgen --passphrase --wordlist examples/wordlist.example.txt --words 5 --capitalize --include-number
+```
+
 Hash a file of passwords (one per line):
 
 ```sh

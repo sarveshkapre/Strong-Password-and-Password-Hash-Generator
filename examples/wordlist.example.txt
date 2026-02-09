@@ -1,0 +1,29 @@
+# Example wordlist (one word per line).
+# You can replace this with a larger list for better security.
+
+alpha
+bravo
+charlie
+delta
+echo
+foxtrot
+golf
+hotel
+india
+juliet
+kilo
+lima
+mango
+nectar
+orbit
+pixel
+quartz
+rocket
+sierra
+tango
+umbra
+velvet
+whisper
+xenon
+yonder
+zephyr

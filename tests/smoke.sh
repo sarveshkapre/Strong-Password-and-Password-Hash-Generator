@@ -68,4 +68,26 @@ while IFS= read -r pw; do
   [[ "$pw" =~ [[:punct:]] ]] || { echo "missing symbol: $pw"; exit 1; }
 done < <(./bin/pwgen --length 20 --count 50 --avoid-ambiguous)
 
+echo "[smoke] pwgen passphrase mode (wordlist-based)"
+cat >"$tmp/words.txt" <<'EOF'
+alpha
+bravo
+charlie
+delta
+EOF
+
+allowed_re='^(alpha|bravo|charlie|delta)$'
+while IFS= read -r phrase; do
+  IFS='-' read -r w1 w2 w3 w4 <<<"$phrase"
+  [[ -n "${w1:-}" && -n "${w2:-}" && -n "${w3:-}" && -n "${w4:-}" ]] || { echo "bad phrase: $phrase"; exit 1; }
+  [[ "$w1" =~ $allowed_re ]] || { echo "bad word: $w1"; exit 1; }
+  [[ "$w2" =~ $allowed_re ]] || { echo "bad word: $w2"; exit 1; }
+  [[ "$w3" =~ $allowed_re ]] || { echo "bad word: $w3"; exit 1; }
+  [[ "$w4" =~ $allowed_re ]] || { echo "bad word: $w4"; exit 1; }
+done < <(./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --words 4 --separator - --count 50)
+
+echo "[smoke] pwgen passphrase mode (capitalize + include-number)"
+phrase="$(./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --words 4 --separator - --capitalize --include-number --count 1)"
+[[ "$phrase" =~ ^[A-Z][a-z]+-[A-Z][a-z]+-[A-Z][a-z]+-[A-Z][a-z]+[0-9]$ ]] || { echo "bad capitalized phrase: $phrase"; exit 1; }
+
 echo "[smoke] ok"
