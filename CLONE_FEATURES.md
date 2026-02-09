@@ -33,7 +33,7 @@
 - [x] (P0) Align `pass2hash` PBKDF2 defaults with current security guidance: PRF-specific iteration defaults (SHA1/SHA256/SHA512) and updated `--help`/README text. (Impact: high, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: medium)
 - [x] (P1) Add `pass2hash --omit-password` to avoid emitting plaintext passwords in output TSV; keep current behavior as default; add smoke coverage and docs. (Impact: high, Effort: low, Strategic fit: high, Differentiation: medium, Risk: low, Confidence: high)
 - [x] (P2) Harden `pwgen` numeric flag parsing (`--length`, `--count`) with strict validation and sane bounds to avoid accidental huge allocations/outputs; add smoke coverage for invalid values. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
-- [ ] (P3) Refresh market-scan notes for this segment (password generation + password hashing/KDF) and keep links under “Insights” only. (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
+- [x] (P3) Refresh market-scan notes for this segment (password generation + password hashing/KDF) and keep links under “Insights” only. (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
 
 - [x] (P0) Reproducible builds + clean repo artifacts: add root `Makefile`, add `.gitignore`, and remove committed ELF binaries + generated outputs from git. (Impact: high, Effort: low, Risk: low, Confidence: high)
 - [x] (P0) Fix crypto portability: replace broken Apple/OpenSSL preprocessor logic and implement a small `crypto` module that supports macOS (CommonCrypto) and Linux (OpenSSL libcrypto) for digests + PBKDF2. (Impact: high, Effort: medium, Risk: medium, Confidence: medium)
@@ -52,16 +52,24 @@
 - 2026-02-09: Updated README with build and usage instructions for `pwgen` and `pass2hash`. Evidence: `README.md`. Commits: `e71bced`.
 - 2026-02-09: Added PBKDF2 modes to `pass2hash` (with salts/iterations output), fixed long-line input handling, and expanded smoke tests with a PBKDF2 known vector. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `f748338`.
 - 2026-02-09: Added `pwgen` passphrase mode (wordlist-based) with entropy output, plus smoke coverage and an example wordlist. Evidence: `GitHub-Brute-Force/pwgen.c`, `tests/smoke.sh`, `examples/wordlist.example.txt`, `make test`. Commits: `5813207`.
+- 2026-02-09: Made `brute` demo safe-by-default (explicit `--length/--max`, optional `--target-hex`, no implicit file writes), and added smoke coverage + README docs. Evidence: `GitHub-Brute-Force/brute.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `83c14a6`.
+- 2026-02-09: Updated PBKDF2 default iterations to be PRF-specific and documented in `--help` + README. Evidence: `GitHub-Brute-Force/pass2hash.c`, `README.md`, `make test`. Commits: `89ce683`.
+- 2026-02-09: Added `pass2hash --omit-password` to avoid emitting plaintext passwords, with smoke coverage and README docs. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `a0b58f5`.
+- 2026-02-09: Hardened `pwgen` numeric flag parsing with strict validation/bounds and added smoke coverage. Evidence: `GitHub-Brute-Force/pwgen.c`, `tests/smoke.sh`, `make test`. Commits: `88f86f4`.
 
 ## Insights
 - Baseline UX expectations (external references, treat as untrusted): configurable length, character classes, “avoid ambiguous/look-alike” option, optional “minimum digits/special” constraints (ideally kept low), and (optionally) passphrase mode.
 - Passphrase UX expectations (external references, treat as untrusted): word count, separator, optional capitalization, and optionally “include a number” in one word; tools often display a strength/entropy estimate and allow very low minimums but recommend 4+ words.
+- Password hashing expectations (external references, treat as untrusted): for password storage, prefer memory-hard KDFs (Argon2id/scrypt) or bcrypt; if PBKDF2 is used, iteration counts should vary by PRF and be high enough to slow offline guessing; store salt+parameters alongside the hash to enable future upgrades.
+- Password policy expectations (external references, treat as untrusted): for user-chosen passwords, prefer length + blocklist checks over composition rules; support long passwords (64+), accept all printing ASCII (including space), and avoid forced periodic rotation unless compromise is suspected.
 - References:
 - https://bitwarden.com/help/generator/
 - https://bitwarden.com/passphrase-generator/
 - https://www.lastpass.com/password-generator
 - https://keepass.info/help/base/pwgenerator.html
 - https://support.keepassium.com/docs/password-generator/
+- https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
+- https://pages.nist.gov/800-63-4/sp800-63b.html
 
 ## Notes
 - This file is maintained by the autonomous clone loop.
