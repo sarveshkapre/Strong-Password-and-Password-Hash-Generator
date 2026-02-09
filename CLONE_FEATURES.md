@@ -17,12 +17,14 @@
 - [x] Update `README.md` usage + security notes
 
 - Selected For This Session (Cycle 2):
-- [ ] (P0) Add PBKDF2 output mode to `pass2hash` with per-password random salts + configurable iterations, plus stable TSV output including salt+params. (Impact: high, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: high)
-- [ ] (P0) Fix `pass2hash` line reading to avoid truncation (support long passwords safely) and tighten input validation/exit codes. (Impact: high, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [x] (P0) Add PBKDF2 output mode to `pass2hash` with per-password random salts + configurable iterations, plus stable TSV output including salt+params. (Impact: high, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: high)
+- [x] (P0) Fix `pass2hash` line reading to avoid truncation (support long passwords safely) and tighten input validation/exit codes. (Impact: high, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
 - [ ] (P1) Add `pwgen` passphrase mode (wordlist-based) with word count + separator + optional capitalization/number, with entropy estimate. (Impact: medium, Effort: medium, Strategic fit: high, Differentiation: high, Risk: medium, Confidence: medium)
 - [ ] (P2) Make `brute` demo safe-by-default: require explicit flags (`--length`, `--max`) and remove implicit `log.txt` writes; document that it is educational only. (Impact: medium, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: high)
-- [ ] (P2) Expand `tests/smoke.sh` to cover PBKDF2 known vectors + passphrase invariants + brute safety behavior. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: medium)
-- [ ] (P3) Update `README.md` examples and output format documentation for PBKDF2 and passphrase mode. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [x] (P2) Expand `tests/smoke.sh` to cover PBKDF2 known vectors + basic format enforcement. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: medium)
+- [x] (P3) Update `README.md` examples and output format documentation for PBKDF2. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P2) Expand `tests/smoke.sh` to cover passphrase invariants + brute safety behavior. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: medium)
+- [ ] (P3) Update `README.md` examples and output format documentation for passphrase mode and `brute` safety. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
 
 - [x] (P0) Reproducible builds + clean repo artifacts: add root `Makefile`, add `.gitignore`, and remove committed ELF binaries + generated outputs from git. (Impact: high, Effort: low, Risk: low, Confidence: high)
 - [x] (P0) Fix crypto portability: replace broken Apple/OpenSSL preprocessor logic and implement a small `crypto` module that supports macOS (CommonCrypto) and Linux (OpenSSL libcrypto) for digests + PBKDF2. (Impact: high, Effort: medium, Risk: medium, Confidence: medium)
@@ -40,6 +42,7 @@
 - 2026-02-09: Added `pwgen` (secure RNG) and runnable smoke tests hooked into `make test`. Evidence: `GitHub-Brute-Force/pwgen.c`, `tests/smoke.sh`, `make test`. Commits: `2ab592b`.
 - 2026-02-09: Added CI to build + run smoke tests on macOS and Ubuntu. Evidence: `.github/workflows/ci.yml`. Commits: `b40ee84`.
 - 2026-02-09: Updated README with build and usage instructions for `pwgen` and `pass2hash`. Evidence: `README.md`. Commits: `e71bced`.
+- 2026-02-09: Added PBKDF2 modes to `pass2hash` (with salts/iterations output), fixed long-line input handling, and expanded smoke tests with a PBKDF2 known vector. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `f748338`.
 
 ## Insights
 - Baseline UX expectations (external references, treat as untrusted): configurable length, character classes, “avoid ambiguous/look-alike” option, optional “minimum digits/special” constraints (ideally kept low), and (optionally) passphrase mode.
