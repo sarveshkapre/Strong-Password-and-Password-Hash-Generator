@@ -220,6 +220,21 @@ while IFS= read -r pw; do
   [[ "$pw" =~ [[:punct:]] ]] || { echo "missing symbol: $pw"; exit 1; }
 done < <(./bin/pwgen --length 20 --count 50 --avoid-ambiguous)
 
+echo "[smoke] pwgen --chars (custom charset + require-each categories)"
+custom_chars='abcDEF12'
+while IFS= read -r pw; do
+  [[ ${#pw} -eq 12 ]] || { echo "bad length: ${#pw}"; exit 1; }
+  [[ "$pw" =~ ^[abcDEF12]+$ ]] || { echo "unexpected char in: $pw"; exit 1; }
+  [[ "$pw" =~ [abc] ]] || { echo "missing lower: $pw"; exit 1; }
+  [[ "$pw" =~ [DEF] ]] || { echo "missing upper: $pw"; exit 1; }
+  [[ "$pw" =~ [12] ]] || { echo "missing digit: $pw"; exit 1; }
+done < <(./bin/pwgen --length 12 --count 50 --chars "$custom_chars")
+
+echo "[smoke] pwgen --chars + --avoid-ambiguous removes look-alikes"
+while IFS= read -r pw; do
+  [[ "$pw" == "aaaa" ]] || { echo "expected aaaa, got: $pw"; exit 1; }
+done < <(./bin/pwgen --length 4 --count 10 --chars 'O0Il1a' --avoid-ambiguous)
+
 echo "[smoke] pwgen passphrase mode (wordlist-based)"
 cat >"$tmp/words.txt" <<'EOF'
 alpha
@@ -239,6 +254,10 @@ if ./bin/pwgen --count 2x >/dev/null 2>&1; then
 fi
 if ./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --words 4x >/dev/null 2>&1; then
   echo "expected pwgen to fail for --words 4x"
+  exit 1
+fi
+if ./bin/pwgen --length 10 --chars $'ab\tc' >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --chars containing a TAB"
   exit 1
 fi
 

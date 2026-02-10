@@ -14,7 +14,7 @@ static void usage(const char *argv0) {
   fprintf(stderr,
           "Usage: %s [--length N] [--count N] [--lower|--no-lower] [--upper|--no-upper]\n"
           "          [--digits|--no-digits] [--symbols|--no-symbols] [--avoid-ambiguous]\n"
-          "          [--require-each|--no-require-each] [--show-entropy]\n"
+          "          [--chars STR] [--require-each|--no-require-each] [--show-entropy]\n"
           "       %s --passphrase --wordlist PATH [--words N] [--separator STR]\n"
           "          [--capitalize] [--include-number] [--count N] [--show-entropy]\n"
           "\n"
@@ -69,6 +69,57 @@ static void remove_chars(char *set, const char *remove) {
     set[w++] = set[r];
   }
   set[w] = '\0';
+}
+
+static int build_pool_from_chars(const char *chars, int avoid_ambiguous, char *out,
+                                 size_t out_cap) {
+  if (!chars || !out || out_cap == 0)
+    return -1;
+
+  uint8_t seen[256];
+  memset(seen, 0, sizeof(seen));
+
+  size_t w = 0;
+  for (const unsigned char *p = (const unsigned char *)chars; *p; p++) {
+    unsigned char c = *p;
+    if (c == '\t' || c == '\n' || c == '\r' || iscntrl(c))
+      return -2;
+    if (!seen[c]) {
+      if (w + 1 >= out_cap)
+        return -1;
+      out[w++] = (char)c;
+      seen[c] = 1;
+    }
+  }
+  out[w] = '\0';
+
+  if (avoid_ambiguous) {
+    // Common “look-alike” set.
+    remove_chars(out, "O0Il1");
+  }
+
+  return out[0] ? 0 : -1;
+}
+
+static void build_category_sets(const char *pool, char *lower, char *upper,
+                                char *digits, char *symbols) {
+  if (!pool || !lower || !upper || !digits || !symbols)
+    return;
+  size_t li = 0, ui = 0, di = 0, si = 0;
+  for (const unsigned char *p = (const unsigned char *)pool; *p; p++) {
+    if (islower(*p))
+      lower[li++] = (char)*p;
+    else if (isupper(*p))
+      upper[ui++] = (char)*p;
+    else if (isdigit(*p))
+      digits[di++] = (char)*p;
+    else if (ispunct(*p))
+      symbols[si++] = (char)*p;
+  }
+  lower[li] = '\0';
+  upper[ui] = '\0';
+  digits[di] = '\0';
+  symbols[si] = '\0';
 }
 
 static int shuffle(char *s, size_t len) {
@@ -246,6 +297,7 @@ int main(int argc, char **argv) {
   const char *separator = "-";
   int capitalize = 0;
   int include_number = 0;
+  const char *custom_chars = NULL;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--length") == 0 && i + 1 < argc) {
@@ -296,6 +348,10 @@ int main(int argc, char **argv) {
     }
     if (strcmp(argv[i], "--avoid-ambiguous") == 0) {
       avoid_ambiguous = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--chars") == 0 && i + 1 < argc) {
+      custom_chars = argv[++i];
       continue;
     }
     if (strcmp(argv[i], "--require-each") == 0) {
@@ -356,6 +412,10 @@ int main(int argc, char **argv) {
   }
 
   if (passphrase) {
+    if (custom_chars) {
+      fprintf(stderr, "--chars is not valid with --passphrase.\n");
+      return 2;
+    }
     if (!wordlist_path) {
       fprintf(stderr, "--passphrase requires --wordlist PATH.\n");
       return 2;
@@ -466,42 +526,79 @@ int main(int argc, char **argv) {
   // Excludes whitespace. Keeps common shell-safe-ish symbols; still may need quoting.
   char symbols[] = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
-  if (avoid_ambiguous) {
-    // Common “look-alike” set.
-    remove_chars(lower, "l");
-    remove_chars(upper, "IO");
-    remove_chars(digits, "01");
-  }
-
   char pool[256];
   pool[0] = '\0';
-  if (use_lower)
-    strncat(pool, lower, sizeof(pool) - strlen(pool) - 1);
-  if (use_upper)
-    strncat(pool, upper, sizeof(pool) - strlen(pool) - 1);
-  if (use_digits)
-    strncat(pool, digits, sizeof(pool) - strlen(pool) - 1);
-  if (use_symbols)
-    strncat(pool, symbols, sizeof(pool) - strlen(pool) - 1);
+  const char *lower_set = NULL, *upper_set = NULL, *digits_set = NULL,
+             *symbols_set = NULL;
+  size_t lower_len = 0, upper_len = 0, digits_len = 0, symbols_len = 0;
+
+  char custom_lower[256], custom_upper[256], custom_digits[256], custom_symbols[256];
+  custom_lower[0] = custom_upper[0] = custom_digits[0] = custom_symbols[0] = '\0';
+
+  if (custom_chars) {
+    int rc = build_pool_from_chars(custom_chars, avoid_ambiguous, pool, sizeof(pool));
+    if (rc == -2) {
+      fprintf(stderr, "--chars contains unsupported characters (no tabs/newlines/control chars).\n");
+      return 2;
+    }
+    if (rc != 0) {
+      fprintf(stderr, "--chars must contain at least one usable character.\n");
+      return 2;
+    }
+    build_category_sets(pool, custom_lower, custom_upper, custom_digits, custom_symbols);
+    lower_set = custom_lower;
+    upper_set = custom_upper;
+    digits_set = custom_digits;
+    symbols_set = custom_symbols;
+    lower_len = strlen(custom_lower);
+    upper_len = strlen(custom_upper);
+    digits_len = strlen(custom_digits);
+    symbols_len = strlen(custom_symbols);
+  } else {
+    if (avoid_ambiguous) {
+      // Common “look-alike” set.
+      remove_chars(lower, "l");
+      remove_chars(upper, "IO");
+      remove_chars(digits, "01");
+    }
+
+    if (use_lower)
+      strncat(pool, lower, sizeof(pool) - strlen(pool) - 1);
+    if (use_upper)
+      strncat(pool, upper, sizeof(pool) - strlen(pool) - 1);
+    if (use_digits)
+      strncat(pool, digits, sizeof(pool) - strlen(pool) - 1);
+    if (use_symbols)
+      strncat(pool, symbols, sizeof(pool) - strlen(pool) - 1);
+
+    lower_set = lower;
+    upper_set = upper;
+    digits_set = digits;
+    symbols_set = symbols;
+    lower_len = use_lower ? strlen(lower) : 0;
+    upper_len = use_upper ? strlen(upper) : 0;
+    digits_len = use_digits ? strlen(digits) : 0;
+    symbols_len = use_symbols ? strlen(symbols) : 0;
+  }
 
   size_t pool_len = strlen(pool);
   if (pool_len == 0) {
-    fprintf(stderr, "No character classes enabled.\n");
+    fprintf(stderr, "No characters available for generation.\n");
     return 2;
   }
 
   size_t required_classes = 0;
   if (require_each) {
-    if (use_lower)
+    if (lower_len > 0)
       required_classes++;
-    if (use_upper)
+    if (upper_len > 0)
       required_classes++;
-    if (use_digits)
+    if (digits_len > 0)
       required_classes++;
-    if (use_symbols)
+    if (symbols_len > 0)
       required_classes++;
     if (length < required_classes) {
-      fprintf(stderr, "--length must be >= number of enabled classes when --require-each is set.\n");
+      fprintf(stderr, "--length must be >= number of available classes when --require-each is set.\n");
       return 2;
     }
   }
@@ -547,49 +644,49 @@ int main(int argc, char **argv) {
       }
 
       size_t pidx = 0;
-      if (use_lower) {
+      if (lower_len > 0) {
         size_t pos = positions[pidx++];
         size_t idx = 0;
-        if (rand_index(strlen(lower), &idx) != 0) {
+        if (rand_index(lower_len, &idx) != 0) {
           fprintf(stderr, "Random generation failed.\n");
           free(positions);
           free(out);
           return 1;
         }
-        out[pos] = lower[idx];
+        out[pos] = lower_set[idx];
       }
-      if (use_upper) {
+      if (upper_len > 0) {
         size_t pos = positions[pidx++];
         size_t idx = 0;
-        if (rand_index(strlen(upper), &idx) != 0) {
+        if (rand_index(upper_len, &idx) != 0) {
           fprintf(stderr, "Random generation failed.\n");
           free(positions);
           free(out);
           return 1;
         }
-        out[pos] = upper[idx];
+        out[pos] = upper_set[idx];
       }
-      if (use_digits) {
+      if (digits_len > 0) {
         size_t pos = positions[pidx++];
         size_t idx = 0;
-        if (rand_index(strlen(digits), &idx) != 0) {
+        if (rand_index(digits_len, &idx) != 0) {
           fprintf(stderr, "Random generation failed.\n");
           free(positions);
           free(out);
           return 1;
         }
-        out[pos] = digits[idx];
+        out[pos] = digits_set[idx];
       }
-      if (use_symbols) {
+      if (symbols_len > 0) {
         size_t pos = positions[pidx++];
         size_t idx = 0;
-        if (rand_index(strlen(symbols), &idx) != 0) {
+        if (rand_index(symbols_len, &idx) != 0) {
           fprintf(stderr, "Random generation failed.\n");
           free(positions);
           free(out);
           return 1;
         }
-        out[pos] = symbols[idx];
+        out[pos] = symbols_set[idx];
       }
 
       // Shuffle to avoid having the "required" characters correlated with selection order.

@@ -27,6 +27,7 @@ Generate strong passwords (cryptographically secure RNG):
 ```sh
 ./bin/pwgen --length 32 --avoid-ambiguous
 ./bin/pwgen --length 20 --count 5 --show-entropy
+./bin/pwgen --length 24 --chars 'abcdef0123456789' --show-entropy
 ```
 
 Generate passphrases (wordlist-based):
