@@ -82,6 +82,12 @@ If your input passwords may contain tabs, the output TSV becomes ambiguous. Pref
 
 If you need a delimiter-free format for downstream parsing, use `--output-format jsonl`.
 
+For high-throughput pipelines, you can skip entropy estimation (emits `entropy_bits=0.00`) with `--no-entropy`:
+
+```sh
+./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256 --no-entropy
+```
+
 If you are generating hashes for storage, prefer `--omit-password` to avoid emitting plaintext passwords in the output:
 
 ```sh

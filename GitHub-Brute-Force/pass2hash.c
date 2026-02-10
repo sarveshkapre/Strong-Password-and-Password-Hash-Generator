@@ -135,7 +135,7 @@ static void usage(const char *argv0) {
           "          [--algo md5|sha1|sha256|sha512|pbkdf2-sha1|pbkdf2-sha256|pbkdf2-sha512]\n"
           "          (use -i - for stdin; -o - for stdout)\n"
           "          [--output-format tsv|jsonl] [--header]\n"
-          "          [--omit-password] [--escape-tsv]\n"
+          "          [--omit-password] [--escape-tsv] [--no-entropy]\n"
           "          [--iterations N] [--dk-len N] [--salt-len N | --salt-hex HEX] [--format v1|v2]\n"
           "       %s --verify [-i input.(tsv|jsonl)] [--input-format tsv|jsonl] [--escape-tsv]\n"
           "\n"
@@ -152,6 +152,7 @@ static void usage(const char *argv0) {
           "  With --omit-password: algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
           "\n"
           "Output format jsonl (with --output-format jsonl): one JSON object per line.\n"
+          "With --no-entropy: emits entropy_bits=0.00 (skips entropy estimation for throughput).\n"
           "\n"
           "Defaults: -i GitHub-Brute-Force/passwordfile.txt, --algo sha256, output to stdout.\n"
           "PBKDF2 defaults: --dk-len 32, --salt-len 16, and --iterations depends on PRF:\n"
@@ -1153,6 +1154,8 @@ int main(int argc, char **argv)
   int header = 0;
   int omit_password = 0;
   int escape_tsv = 0;
+  int compute_entropy = 1;
+  int entropy_flag_set = 0;
   int verify = 0;
   hash_mode_t mode = MODE_DIGEST;
   crypto_algo_t digest_algo = CRYPTO_ALGO_SHA256;
@@ -1220,6 +1223,16 @@ int main(int argc, char **argv)
     }
     if (strcmp(argv[i], "--escape-tsv") == 0) {
       escape_tsv = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--no-entropy") == 0) {
+      compute_entropy = 0;
+      entropy_flag_set = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--entropy") == 0) {
+      compute_entropy = 1;
+      entropy_flag_set = 1;
       continue;
     }
     if (strcmp(argv[i], "--algo") == 0 && i + 1 < argc) {
@@ -1294,6 +1307,10 @@ int main(int argc, char **argv)
   }
 
   if (verify) {
+    if (entropy_flag_set) {
+      fprintf(stderr, "--no-entropy/--entropy is only valid when generating hashes.\n");
+      return 2;
+    }
     if (omit_password) {
       fprintf(stderr, "--verify requires password column; do not use --omit-password.\n");
       return 2;
@@ -1493,7 +1510,9 @@ int main(int argc, char **argv)
       warned_tabs = 1;
     }
 
-    double entropy = estimate_entropy_bits(line);
+    double entropy = 0.0;
+    if (compute_entropy)
+      entropy = estimate_entropy_bits(line);
     const char *pw_field = line;
     char *pw_escaped = NULL;
     if (!omit_password && escape_tsv) {

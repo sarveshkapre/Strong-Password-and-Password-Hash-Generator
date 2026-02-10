@@ -47,6 +47,10 @@ if [[ "$line" != "$expected" ]]; then
   exit 1
 fi
 
+echo "[smoke] pass2hash --no-entropy emits 0.00 (TSV)"
+entropy="$(./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --no-entropy | head -n 1 | cut -f4)"
+[[ "$entropy" == "0.00" ]] || { echo "expected entropy 0.00, got: $entropy"; exit 1; }
+
 echo "[smoke] pass2hash --omit-password"
 line="$(./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --omit-password | head -n 1 | cut -f1-2)"
 expected=$'sha256\t5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
@@ -160,6 +164,14 @@ assert obj["password"] == "password"
 assert obj["algo"] == "sha256"
 assert obj["hash_hex"] == hashlib.sha256(b"password").hexdigest()
 assert isinstance(obj["entropy_bits"], (int, float))
+PY
+
+echo "[smoke] pass2hash --no-entropy emits 0.0 (JSONL)"
+json_line="$(./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --output-format jsonl --no-entropy | head -n 1)"
+python3 - <<'PY' <<<"$json_line"
+import json,sys
+obj = json.loads(sys.stdin.read())
+assert obj["entropy_bits"] == 0.0
 PY
 
 echo "[smoke] pass2hash jsonl output (pbkdf2)"
