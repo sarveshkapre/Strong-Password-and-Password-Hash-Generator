@@ -146,6 +146,50 @@ if ./bin/pass2hash --verify -i "$bad_tsv" >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "[smoke] pass2hash --header (TSV) + verify skips comments"
+hdr_tsv="$tmp/with_header.tsv"
+./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --header >"$hdr_tsv"
+./bin/pass2hash --verify -i "$hdr_tsv" >/dev/null
+
+echo "[smoke] pass2hash jsonl output (digest)"
+json_line="$(./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --output-format jsonl | head -n 1)"
+python3 - <<'PY' <<<"$json_line"
+import json,sys,hashlib
+obj = json.loads(sys.stdin.read())
+assert obj["password"] == "password"
+assert obj["algo"] == "sha256"
+assert obj["hash_hex"] == hashlib.sha256(b"password").hexdigest()
+assert isinstance(obj["entropy_bits"], (int, float))
+PY
+
+echo "[smoke] pass2hash jsonl output (pbkdf2)"
+json_line="$(./bin/pass2hash -i "$tmp/in.txt" --algo pbkdf2-sha256 --salt-hex 73616c74 --iterations 1 --dk-len 32 --output-format jsonl | head -n 1)"
+python3 - <<PY <<<"$json_line"
+import json,sys
+obj = json.loads(sys.stdin.read())
+assert obj["password"] == "password"
+assert obj["algo"] == "pbkdf2-sha256"
+assert obj["salt_hex"] == "73616c74"
+assert obj["iterations"] == 1
+assert obj["dk_len"] == 32
+assert obj["hash_hex"] == "$expected_pbkdf2_sha256"
+PY
+
+echo "[smoke] pass2hash --verify (jsonl)"
+out_jsonl="$tmp/out.jsonl"
+./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --output-format jsonl >"$out_jsonl"
+./bin/pass2hash --verify -i "$out_jsonl" --input-format jsonl >/dev/null
+
+echo "[smoke] pass2hash jsonl + --omit-password omits plaintext"
+json_line="$(./bin/pass2hash -i "$tmp/in.txt" --algo sha256 --output-format jsonl --omit-password | head -n 1)"
+python3 - <<'PY' <<<"$json_line"
+import json,sys
+obj = json.loads(sys.stdin.read())
+assert "password" not in obj
+assert obj["algo"] == "sha256"
+assert "hash_hex" in obj
+PY
+
 echo "[smoke] pwgen length/ambiguity"
 ambiguous_re='[O0Il1]'
 while IFS= read -r pw; do

@@ -20,6 +20,11 @@ typedef enum {
   OUTFMT_V2 = 2, // v1 + salt/iterations/dk_len (empty for digest mode)
 } output_format_t;
 
+typedef enum {
+  STREAM_TSV = 0,
+  STREAM_JSONL = 1,
+} stream_format_t;
+
 static void rstrip_newlines(char *s) {
   if (!s)
     return;
@@ -64,6 +69,31 @@ static int parse_hex(const char *hex, uint8_t **out, size_t *out_len) {
   return 0;
 }
 
+static int sbuf_append(char **buf, size_t *cap, size_t *len, const void *src,
+                       size_t src_len) {
+  if (!buf || !cap || !len || (!src && src_len > 0))
+    return -1;
+  size_t need = *len + src_len + 1;
+  if (*cap < need) {
+    size_t new_cap = (*cap == 0) ? 128 : *cap;
+    while (new_cap < need) {
+      if (new_cap > (SIZE_MAX / 2))
+        return -1;
+      new_cap *= 2;
+    }
+    char *tmp = (char *)realloc(*buf, new_cap);
+    if (!tmp)
+      return -1;
+    *buf = tmp;
+    *cap = new_cap;
+  }
+  if (src_len > 0)
+    memcpy(*buf + *len, src, src_len);
+  *len += src_len;
+  (*buf)[*len] = '\0';
+  return 0;
+}
+
 static int estimate_pool_size(const char *s) {
   int has_lower = 0, has_upper = 0, has_digit = 0, has_symbol = 0;
   for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
@@ -104,12 +134,13 @@ static void usage(const char *argv0) {
           "Usage: %s [-i input.txt] [-o output.txt] [--append]\n"
           "          [--algo md5|sha1|sha256|sha512|pbkdf2-sha1|pbkdf2-sha256|pbkdf2-sha512]\n"
           "          (use -i - for stdin; -o - for stdout)\n"
+          "          [--output-format tsv|jsonl] [--header]\n"
           "          [--omit-password] [--escape-tsv]\n"
           "          [--iterations N] [--dk-len N] [--salt-len N | --salt-hex HEX] [--format v1|v2]\n"
-          "       %s --verify [-i input.tsv] [--escape-tsv]\n"
+          "       %s --verify [-i input.(tsv|jsonl)] [--input-format tsv|jsonl] [--escape-tsv]\n"
           "\n"
           "Reads one password per line.\n"
-          "With --verify, reads TSV output and recomputes hashes (fails fast on mismatch).\n"
+          "With --verify, reads TSV or JSONL output and recomputes hashes (fails fast on mismatch).\n"
           "\n"
           "Output format v1 (default for digest algos):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits\n"
@@ -119,6 +150,8 @@ static void usage(const char *argv0) {
           "Output format v2 (automatic for PBKDF2 algos unless --format v1 is forced):\n"
           "  password<TAB>algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
           "  With --omit-password: algo<TAB>hash_hex<TAB>entropy_bits<TAB>salt_hex<TAB>iterations<TAB>dk_len\n"
+          "\n"
+          "Output format jsonl (with --output-format jsonl): one JSON object per line.\n"
           "\n"
           "Defaults: -i GitHub-Brute-Force/passwordfile.txt, --algo sha256, output to stdout.\n"
           "PBKDF2 defaults: --dk-len 32, --salt-len 16, and --iterations depends on PRF:\n"
@@ -280,6 +313,8 @@ static int verify_tsv_stream(FILE *in, int escaped_input) {
     lineno++;
     rstrip_newlines(line);
     if (line[0] == '\0')
+      continue;
+    if (line[0] == '#')
       continue;
 
     char *fields[8];
@@ -454,6 +489,605 @@ static int verify_tsv_stream(FILE *in, int escaped_input) {
   return 0;
 }
 
+static const char *json_skip_ws(const char *p) {
+  while (p && *p && isspace((unsigned char)*p))
+    p++;
+  return p;
+}
+
+static int json_hex4(const char *p, uint32_t *out_cp) {
+  if (!p || !out_cp)
+    return -1;
+  uint32_t v = 0;
+  for (int i = 0; i < 4; i++) {
+    int h = hexval((unsigned char)p[i]);
+    if (h < 0)
+      return -1;
+    v = (v << 4) | (uint32_t)h;
+  }
+  *out_cp = v;
+  return 0;
+}
+
+static int append_utf8(char **buf, size_t *cap, size_t *len, uint32_t cp) {
+  if (!buf || !cap || !len)
+    return -1;
+
+  uint8_t tmp[4];
+  size_t n = 0;
+  if (cp <= 0x7Fu) {
+    tmp[0] = (uint8_t)cp;
+    n = 1;
+  } else if (cp <= 0x7FFu) {
+    tmp[0] = (uint8_t)(0xC0u | ((cp >> 6) & 0x1Fu));
+    tmp[1] = (uint8_t)(0x80u | (cp & 0x3Fu));
+    n = 2;
+  } else if (cp <= 0xFFFFu) {
+    tmp[0] = (uint8_t)(0xE0u | ((cp >> 12) & 0x0Fu));
+    tmp[1] = (uint8_t)(0x80u | ((cp >> 6) & 0x3Fu));
+    tmp[2] = (uint8_t)(0x80u | (cp & 0x3Fu));
+    n = 3;
+  } else if (cp <= 0x10FFFFu) {
+    tmp[0] = (uint8_t)(0xF0u | ((cp >> 18) & 0x07u));
+    tmp[1] = (uint8_t)(0x80u | ((cp >> 12) & 0x3Fu));
+    tmp[2] = (uint8_t)(0x80u | ((cp >> 6) & 0x3Fu));
+    tmp[3] = (uint8_t)(0x80u | (cp & 0x3Fu));
+    n = 4;
+  } else {
+    return -1;
+  }
+
+  return sbuf_append(buf, cap, len, (const char *)tmp, n);
+}
+
+// Parses a JSON string and returns an allocated, unescaped UTF-8 buffer.
+// Advances *pp to the character after the closing quote.
+static int json_parse_string_alloc(const char **pp, char **out) {
+  if (!pp || !*pp || !out)
+    return -1;
+  const char *p = json_skip_ws(*pp);
+  if (!p || *p != '"')
+    return -1;
+  p++; // skip opening quote
+
+  char *buf = NULL;
+  size_t cap = 0, len = 0;
+
+  while (*p) {
+    unsigned char c = (unsigned char)*p++;
+    if (c == '"') {
+      // end
+      *pp = p;
+      *out = buf ? buf : (char *)calloc(1, 1);
+      return *out ? 0 : -1;
+    }
+    if (c != '\\') {
+      if (sbuf_append(&buf, &cap, &len, (const char *)&c, 1) != 0)
+        goto fail;
+      continue;
+    }
+
+    // escape
+    unsigned char e = (unsigned char)*p++;
+    if (e == 0)
+      goto fail;
+    switch (e) {
+    case '"':
+    case '\\':
+    case '/':
+      if (sbuf_append(&buf, &cap, &len, (const char *)&e, 1) != 0)
+        goto fail;
+      break;
+    case 'b': {
+      char x = '\b';
+      if (sbuf_append(&buf, &cap, &len, &x, 1) != 0)
+        goto fail;
+      break;
+    }
+    case 'f': {
+      char x = '\f';
+      if (sbuf_append(&buf, &cap, &len, &x, 1) != 0)
+        goto fail;
+      break;
+    }
+    case 'n': {
+      char x = '\n';
+      if (sbuf_append(&buf, &cap, &len, &x, 1) != 0)
+        goto fail;
+      break;
+    }
+    case 'r': {
+      char x = '\r';
+      if (sbuf_append(&buf, &cap, &len, &x, 1) != 0)
+        goto fail;
+      break;
+    }
+    case 't': {
+      char x = '\t';
+      if (sbuf_append(&buf, &cap, &len, &x, 1) != 0)
+        goto fail;
+      break;
+    }
+    case 'u': {
+      if (!p[0] || !p[1] || !p[2] || !p[3])
+        goto fail;
+      uint32_t cp = 0;
+      if (json_hex4(p, &cp) != 0)
+        goto fail;
+      p += 4;
+
+      // surrogate pair
+      if (cp >= 0xD800u && cp <= 0xDBFFu) {
+        if (p[0] != '\\' || p[1] != 'u')
+          goto fail;
+        p += 2;
+        if (!p[0] || !p[1] || !p[2] || !p[3])
+          goto fail;
+        uint32_t lo = 0;
+        if (json_hex4(p, &lo) != 0)
+          goto fail;
+        p += 4;
+        if (lo < 0xDC00u || lo > 0xDFFFu)
+          goto fail;
+        cp = 0x10000u + (((cp - 0xD800u) << 10) | (lo - 0xDC00u));
+      } else if (cp >= 0xDC00u && cp <= 0xDFFFu) {
+        goto fail;
+      }
+
+      if (append_utf8(&buf, &cap, &len, cp) != 0)
+        goto fail;
+      break;
+    }
+    default:
+      goto fail;
+    }
+  }
+
+fail:
+  free(buf);
+  return -1;
+}
+
+static int json_skip_value(const char **pp) {
+  if (!pp || !*pp)
+    return -1;
+  const char *p = json_skip_ws(*pp);
+  if (!p || *p == '\0')
+    return -1;
+
+  if (*p == '"') {
+    char *tmp = NULL;
+    if (json_parse_string_alloc(&p, &tmp) != 0)
+      return -1;
+    free(tmp);
+    *pp = p;
+    return 0;
+  }
+
+  if (*p == '-' || isdigit((unsigned char)*p)) {
+    // number (we don't fully validate here)
+    const char *q = p;
+    while (*q && (isdigit((unsigned char)*q) || *q == '-' || *q == '+' || *q == '.' ||
+                  *q == 'e' || *q == 'E'))
+      q++;
+    if (q == p)
+      return -1;
+    *pp = q;
+    return 0;
+  }
+
+  if (strncmp(p, "true", 4) == 0) {
+    *pp = p + 4;
+    return 0;
+  }
+  if (strncmp(p, "false", 5) == 0) {
+    *pp = p + 5;
+    return 0;
+  }
+  if (strncmp(p, "null", 4) == 0) {
+    *pp = p + 4;
+    return 0;
+  }
+
+  // Keep verify implementation small: JSONL from this tool never emits nested
+  // values. Reject to avoid accidentally accepting malformed inputs.
+  return -1;
+}
+
+static int json_parse_u64_digits(const char **pp, uint64_t *out) {
+  if (!pp || !*pp || !out)
+    return -1;
+  const char *p = json_skip_ws(*pp);
+  if (!p || !isdigit((unsigned char)*p))
+    return -1;
+  uint64_t v = 0;
+  while (*p && isdigit((unsigned char)*p)) {
+    uint64_t d = (uint64_t)(*p - '0');
+    if (v > (UINT64_MAX - d) / 10)
+      return -1;
+    v = v * 10 + d;
+    p++;
+  }
+  *pp = p;
+  *out = v;
+  return 0;
+}
+
+static int verify_jsonl_stream(FILE *in) {
+  if (!in)
+    return 1;
+
+  char *line = NULL;
+  size_t cap = 0;
+  ssize_t nread;
+  uint64_t lineno = 0;
+
+  while ((nread = getline(&line, &cap, in)) != -1) {
+    (void)nread;
+    lineno++;
+    rstrip_newlines(line);
+    if (line[0] == '\0')
+      continue;
+    if (line[0] == '#')
+      continue;
+
+    const char *p = json_skip_ws(line);
+    if (!p || *p != '{') {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": expected JSON object.\n",
+              lineno);
+      free(line);
+      return 2;
+    }
+    p++; // {
+
+    char *pw = NULL;
+    char *algo = NULL;
+    char *hash_hex = NULL;
+    char *salt_hex = NULL;
+    uint64_t iters_u64 = 0;
+    uint64_t dklen_u64 = 0;
+    int have_iters = 0;
+    int have_dklen = 0;
+
+    for (;;) {
+      p = json_skip_ws(p);
+      if (!p) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": parse failed.\n", lineno);
+        goto json_fail;
+      }
+      if (*p == '}') {
+        p++;
+        break;
+      }
+
+      char *key = NULL;
+      if (json_parse_string_alloc(&p, &key) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad JSON key.\n",
+                lineno);
+        free(key);
+        goto json_fail;
+      }
+      p = json_skip_ws(p);
+      if (!p || *p != ':') {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": expected ':'.\n", lineno);
+        free(key);
+        goto json_fail;
+      }
+      p++; // :
+      p = json_skip_ws(p);
+
+      if (strcmp(key, "password") == 0) {
+        free(pw);
+        pw = NULL;
+        if (p && *p == '"') {
+          if (json_parse_string_alloc(&p, &pw) != 0) {
+            fprintf(stderr,
+                    "Verify error on line %" PRIu64 ": bad password string.\n",
+                    lineno);
+            free(key);
+            goto json_fail;
+          }
+        } else {
+          // null / missing password isn't verifiable
+          if (json_skip_value(&p) != 0) {
+            fprintf(stderr,
+                    "Verify error on line %" PRIu64 ": bad password value.\n",
+                    lineno);
+            free(key);
+            goto json_fail;
+          }
+        }
+        free(key);
+      } else if (strcmp(key, "algo") == 0) {
+        free(algo);
+        algo = NULL;
+        if (json_parse_string_alloc(&p, &algo) != 0) {
+          fprintf(stderr, "Verify error on line %" PRIu64 ": bad algo string.\n",
+                  lineno);
+          free(key);
+          goto json_fail;
+        }
+        free(key);
+      } else if (strcmp(key, "hash_hex") == 0) {
+        free(hash_hex);
+        hash_hex = NULL;
+        if (json_parse_string_alloc(&p, &hash_hex) != 0) {
+          fprintf(stderr,
+                  "Verify error on line %" PRIu64 ": bad hash_hex string.\n",
+                  lineno);
+          free(key);
+          goto json_fail;
+        }
+        free(key);
+      } else if (strcmp(key, "salt_hex") == 0) {
+        free(salt_hex);
+        salt_hex = NULL;
+        if (json_parse_string_alloc(&p, &salt_hex) != 0) {
+          fprintf(stderr,
+                  "Verify error on line %" PRIu64 ": bad salt_hex string.\n",
+                  lineno);
+          free(key);
+          goto json_fail;
+        }
+        free(key);
+      } else if (strcmp(key, "iterations") == 0) {
+        if (json_parse_u64_digits(&p, &iters_u64) != 0) {
+          fprintf(stderr,
+                  "Verify error on line %" PRIu64 ": bad iterations number.\n",
+                  lineno);
+          free(key);
+          goto json_fail;
+        }
+        have_iters = 1;
+        free(key);
+      } else if (strcmp(key, "dk_len") == 0) {
+        if (json_parse_u64_digits(&p, &dklen_u64) != 0) {
+          fprintf(stderr, "Verify error on line %" PRIu64 ": bad dk_len number.\n",
+                  lineno);
+          free(key);
+          goto json_fail;
+        }
+        have_dklen = 1;
+        free(key);
+      } else {
+        if (json_skip_value(&p) != 0) {
+          fprintf(stderr, "Verify error on line %" PRIu64 ": bad JSON value.\n",
+                  lineno);
+          free(key);
+          goto json_fail;
+        }
+        free(key);
+      }
+
+      p = json_skip_ws(p);
+      if (*p == ',') {
+        p++;
+        continue;
+      }
+      if (*p == '}') {
+        p++;
+        break;
+      }
+      fprintf(stderr, "Verify error on line %" PRIu64 ": expected ',' or '}'.\n",
+              lineno);
+      goto json_fail;
+    }
+
+    if (!pw) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": password is omitted.\n",
+              lineno);
+      goto json_fail;
+    }
+    if (!algo || !hash_hex) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": missing required fields.\n",
+              lineno);
+      goto json_fail;
+    }
+    if (normalize_hex_lower_inplace(hash_hex) != 0) {
+      fprintf(stderr, "Verify error on line %" PRIu64 ": invalid hash hex.\n",
+              lineno);
+      goto json_fail;
+    }
+
+    if (strncmp(algo, "pbkdf2-", 7) == 0) {
+      if (!salt_hex || !have_iters || !have_dklen) {
+        fprintf(stderr,
+                "Verify error on line %" PRIu64 ": missing PBKDF2 parameters.\n",
+                lineno);
+        goto json_fail;
+      }
+
+      const char *prf_name = algo + 7;
+      crypto_algo_t prf_algo;
+      if (crypto_parse_algo(prf_name, &prf_algo) != 0 ||
+          prf_algo == CRYPTO_ALGO_MD5) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": invalid PBKDF2 algo.\n",
+                lineno);
+        goto json_fail;
+      }
+
+      if (iters_u64 == 0 || iters_u64 > 0xFFFFFFFFu) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad iterations.\n",
+                lineno);
+        goto json_fail;
+      }
+      if (dklen_u64 == 0 || dklen_u64 > 1024u) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad dk_len.\n", lineno);
+        goto json_fail;
+      }
+      uint32_t iters = (uint32_t)iters_u64;
+      size_t dk_len = (size_t)dklen_u64;
+
+      if (strlen(hash_hex) != dk_len * 2) {
+        fprintf(stderr,
+                "Verify error on line %" PRIu64 ": hash length mismatch for dk_len.\n",
+                lineno);
+        goto json_fail;
+      }
+
+      uint8_t *salt = NULL;
+      size_t salt_len = 0;
+      if (parse_hex(salt_hex, &salt, &salt_len) != 0 || salt_len == 0 ||
+          salt_len > 1024) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": bad salt hex.\n",
+                lineno);
+        free(salt);
+        goto json_fail;
+      }
+
+      char *computed = (char *)calloc(1, dk_len * 2 + 1);
+      if (!computed) {
+        perror("calloc");
+        free(salt);
+        goto json_internal;
+      }
+      if (crypto_pbkdf2_hex(prf_algo, pw, salt, salt_len, iters, dk_len,
+                            computed, dk_len * 2 + 1) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": PBKDF2 failed.\n",
+                lineno);
+        free(computed);
+        free(salt);
+        goto json_internal;
+      }
+      if (strcmp(computed, hash_hex) != 0) {
+        fprintf(stderr, "Verify mismatch on line %" PRIu64 ".\n", lineno);
+        free(computed);
+        free(salt);
+        goto json_mismatch;
+      }
+      free(computed);
+      free(salt);
+    } else {
+      crypto_algo_t d_algo;
+      if (crypto_parse_algo(algo, &d_algo) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": invalid algo.\n",
+                lineno);
+        goto json_fail;
+      }
+      size_t dlen = crypto_digest_size(d_algo);
+      if (dlen == 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": invalid digest.\n",
+                lineno);
+        goto json_fail;
+      }
+      if (strlen(hash_hex) != dlen * 2) {
+        fprintf(stderr,
+                "Verify error on line %" PRIu64 ": digest length mismatch.\n",
+                lineno);
+        goto json_fail;
+      }
+
+      char computed[64 * 2 + 1];
+      if (crypto_digest_hex(d_algo, (const uint8_t *)pw, strlen(pw), computed,
+                            sizeof(computed)) != 0) {
+        fprintf(stderr, "Verify error on line %" PRIu64 ": digest failed.\n",
+                lineno);
+        goto json_internal;
+      }
+      if (strcmp(computed, hash_hex) != 0) {
+        fprintf(stderr, "Verify mismatch on line %" PRIu64 ".\n", lineno);
+        goto json_mismatch;
+      }
+    }
+
+    free(pw);
+    free(algo);
+    free(hash_hex);
+    free(salt_hex);
+    continue;
+
+json_mismatch:
+    free(pw);
+    free(algo);
+    free(hash_hex);
+    free(salt_hex);
+    free(line);
+    return 4;
+
+json_internal:
+    free(pw);
+    free(algo);
+    free(hash_hex);
+    free(salt_hex);
+    free(line);
+    return 1;
+
+json_fail:
+    free(pw);
+    free(algo);
+    free(hash_hex);
+    free(salt_hex);
+    free(line);
+    return 2;
+  }
+
+  free(line);
+  if (ferror(in)) {
+    fprintf(stderr, "Verify error: failed reading input.\n");
+    return 1;
+  }
+  return 0;
+}
+
+static int parse_stream_format(const char *s, stream_format_t *out_fmt) {
+  if (!s || !out_fmt)
+    return -1;
+  char buf[16];
+  size_t n = strlen(s);
+  if (n == 0 || n >= sizeof(buf))
+    return -1;
+  for (size_t i = 0; i < n; i++)
+    buf[i] = (char)tolower((unsigned char)s[i]);
+  buf[n] = '\0';
+  if (strcmp(buf, "tsv") == 0) {
+    *out_fmt = STREAM_TSV;
+    return 0;
+  }
+  if (strcmp(buf, "jsonl") == 0) {
+    *out_fmt = STREAM_JSONL;
+    return 0;
+  }
+  return -1;
+}
+
+static void json_fprint_string(FILE *out, const char *s) {
+  fputc('"', out);
+  for (const unsigned char *p = (const unsigned char *)s; p && *p; p++) {
+    unsigned char c = *p;
+    switch (c) {
+    case '"':
+      fputs("\\\"", out);
+      break;
+    case '\\':
+      fputs("\\\\", out);
+      break;
+    case '\b':
+      fputs("\\b", out);
+      break;
+    case '\f':
+      fputs("\\f", out);
+      break;
+    case '\n':
+      fputs("\\n", out);
+      break;
+    case '\r':
+      fputs("\\r", out);
+      break;
+    case '\t':
+      fputs("\\t", out);
+      break;
+    default:
+      if (c < 0x20) {
+        // Keep output valid JSON even for control bytes.
+        fprintf(out, "\\u%04x", (unsigned int)c);
+      } else {
+        fputc((int)c, out);
+      }
+    }
+  }
+  fputc('"', out);
+}
+
 static int parse_algo_or_kdf(const char *s, hash_mode_t *out_mode,
                              crypto_algo_t *out_digest_algo,
                              crypto_algo_t *out_prf_algo,
@@ -512,6 +1146,11 @@ int main(int argc, char **argv)
   const char *output_path = NULL;
   int output_set = 0;
   int append = 0;
+  stream_format_t output_stream_fmt = STREAM_TSV;
+  int output_stream_set = 0;
+  stream_format_t input_stream_fmt = STREAM_TSV;
+  int input_stream_set = 0;
+  int header = 0;
   int omit_password = 0;
   int escape_tsv = 0;
   int verify = 0;
@@ -549,6 +1188,30 @@ int main(int argc, char **argv)
     }
     if (strcmp(argv[i], "--append") == 0) {
       append = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--output-format") == 0 && i + 1 < argc) {
+      stream_format_t f;
+      if (parse_stream_format(argv[++i], &f) != 0) {
+        fprintf(stderr, "Invalid --output-format value (use tsv or jsonl).\n");
+        return 2;
+      }
+      output_stream_fmt = f;
+      output_stream_set = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--input-format") == 0 && i + 1 < argc) {
+      stream_format_t f;
+      if (parse_stream_format(argv[++i], &f) != 0) {
+        fprintf(stderr, "Invalid --input-format value (use tsv or jsonl).\n");
+        return 2;
+      }
+      input_stream_fmt = f;
+      input_stream_set = 1;
+      continue;
+    }
+    if (strcmp(argv[i], "--header") == 0) {
+      header = 1;
       continue;
     }
     if (strcmp(argv[i], "--omit-password") == 0) {
@@ -635,10 +1298,14 @@ int main(int argc, char **argv)
       fprintf(stderr, "--verify requires password column; do not use --omit-password.\n");
       return 2;
     }
-    if (output_set || append || algo_set || format_set || iterations_set ||
-        dk_len_set || salt_len_set || salt_hex_set) {
+    if (output_set || append || output_stream_set || header || algo_set || format_set ||
+        iterations_set || dk_len_set || salt_len_set || salt_hex_set) {
       fprintf(stderr,
               "--verify does not accept output/algo/format/PBKDF2 parameter flags.\n");
+      return 2;
+    }
+    if (input_stream_fmt == STREAM_JSONL && escape_tsv) {
+      fprintf(stderr, "--escape-tsv is only valid for TSV verification.\n");
       return 2;
     }
 
@@ -652,10 +1319,35 @@ int main(int argc, char **argv)
         return 1;
       }
     }
-    int rc = verify_tsv_stream(vin, escape_tsv);
+    int rc = 0;
+    if (input_stream_fmt == STREAM_JSONL) {
+      rc = verify_jsonl_stream(vin);
+    } else {
+      rc = verify_tsv_stream(vin, escape_tsv);
+    }
     if (!vin_is_stdio)
       fclose(vin);
     return rc;
+  }
+
+  if (input_stream_set) {
+    fprintf(stderr, "--input-format is only valid with --verify.\n");
+    return 2;
+  }
+
+  if (output_stream_fmt == STREAM_JSONL) {
+    if (escape_tsv) {
+      fprintf(stderr, "--escape-tsv is only valid with --output-format tsv.\n");
+      return 2;
+    }
+    if (header) {
+      fprintf(stderr, "--header is only valid with --output-format tsv.\n");
+      return 2;
+    }
+    if (format_set) {
+      fprintf(stderr, "--format is only valid with --output-format tsv.\n");
+      return 2;
+    }
   }
 
   if (mode == MODE_DIGEST) {
@@ -771,13 +1463,30 @@ int main(int argc, char **argv)
   ssize_t nread;
   int warned_tabs = 0;
 
+  if (output_stream_fmt == STREAM_TSV && header) {
+    if (outfmt == OUTFMT_V1) {
+      if (!omit_password) {
+        fprintf(out, "#password\talgo\thash_hex\tentropy_bits\n");
+      } else {
+        fprintf(out, "#algo\thash_hex\tentropy_bits\n");
+      }
+    } else {
+      if (!omit_password) {
+        fprintf(out, "#password\talgo\thash_hex\tentropy_bits\tsalt_hex\titerations\tdk_len\n");
+      } else {
+        fprintf(out, "#algo\thash_hex\tentropy_bits\tsalt_hex\titerations\tdk_len\n");
+      }
+    }
+  }
+
   while ((nread = getline(&line, &line_cap, in)) != -1) {
     (void)nread;
     rstrip_newlines(line);
     if (line[0] == '\0')
       continue;
 
-    if (!omit_password && !escape_tsv && !warned_tabs && strchr(line, '\t') != NULL) {
+    if (output_stream_fmt == STREAM_TSV && !omit_password && !escape_tsv &&
+        !warned_tabs && strchr(line, '\t') != NULL) {
       fprintf(stderr,
               "Warning: input contains a TAB character; output TSV will be ambiguous. "
               "Use --escape-tsv or --omit-password.\n");
@@ -808,22 +1517,42 @@ int main(int argc, char **argv)
         return 1;
       }
 
-      if (outfmt == OUTFMT_V1) {
-        if (!omit_password) {
-          fprintf(out, "%s\t%s\t%s\t%.2f\n", pw_field, crypto_algo_name(digest_algo),
-                  hash_hex, entropy);
+      if (output_stream_fmt == STREAM_TSV) {
+        if (outfmt == OUTFMT_V1) {
+          if (!omit_password) {
+            fprintf(out, "%s\t%s\t%s\t%.2f\n", pw_field,
+                    crypto_algo_name(digest_algo), hash_hex, entropy);
+          } else {
+            fprintf(out, "%s\t%s\t%.2f\n", crypto_algo_name(digest_algo), hash_hex,
+                    entropy);
+          }
         } else {
-          fprintf(out, "%s\t%s\t%.2f\n", crypto_algo_name(digest_algo), hash_hex,
-                  entropy);
+          if (!omit_password) {
+            fprintf(out, "%s\t%s\t%s\t%.2f\t\t\t\n", pw_field,
+                    crypto_algo_name(digest_algo), hash_hex, entropy);
+          } else {
+            fprintf(out, "%s\t%s\t%.2f\t\t\t\n", crypto_algo_name(digest_algo),
+                    hash_hex, entropy);
+          }
         }
       } else {
+        // JSONL
+        fputc('{', out);
+        int first = 1;
         if (!omit_password) {
-          fprintf(out, "%s\t%s\t%s\t%.2f\t\t\t\n", pw_field,
-                  crypto_algo_name(digest_algo), hash_hex, entropy);
-        } else {
-          fprintf(out, "%s\t%s\t%.2f\t\t\t\n", crypto_algo_name(digest_algo),
-                  hash_hex, entropy);
+          fputs("\"password\":", out);
+          json_fprint_string(out, line);
+          first = 0;
         }
+        if (!first)
+          fputc(',', out);
+        fputs("\"algo\":", out);
+        json_fprint_string(out, crypto_algo_name(digest_algo));
+        fputc(',', out);
+        fputs("\"hash_hex\":", out);
+        json_fprint_string(out, hash_hex);
+        fprintf(out, ",\"entropy_bits\":%.2f", entropy);
+        fputs("}\n", out);
       }
       free(pw_escaped);
       continue;
@@ -904,12 +1633,36 @@ int main(int argc, char **argv)
     }
     salt_hex[salt_len * 2] = '\0';
 
-    if (!omit_password) {
-      fprintf(out, "%s\t%s\t%s\t%.2f\t%s\t%u\t%zu\n", pw_field, algo_name, hash_hex,
-              entropy, salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+    if (output_stream_fmt == STREAM_TSV) {
+      if (!omit_password) {
+        fprintf(out, "%s\t%s\t%s\t%.2f\t%s\t%u\t%zu\n", pw_field, algo_name,
+                hash_hex, entropy, salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+      } else {
+        fprintf(out, "%s\t%s\t%.2f\t%s\t%u\t%zu\n", algo_name, hash_hex, entropy,
+                salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+      }
     } else {
-      fprintf(out, "%s\t%s\t%.2f\t%s\t%u\t%zu\n", algo_name, hash_hex, entropy,
-              salt_hex, pbkdf2_iterations, pbkdf2_dk_len);
+      fputc('{', out);
+      int first = 1;
+      if (!omit_password) {
+        fputs("\"password\":", out);
+        json_fprint_string(out, line);
+        first = 0;
+      }
+      if (!first)
+        fputc(',', out);
+      fputs("\"algo\":", out);
+      json_fprint_string(out, algo_name);
+      fputc(',', out);
+      fputs("\"hash_hex\":", out);
+      json_fprint_string(out, hash_hex);
+      fprintf(out, ",\"entropy_bits\":%.2f", entropy);
+      fputc(',', out);
+      fputs("\"salt_hex\":", out);
+      json_fprint_string(out, salt_hex);
+      fprintf(out, ",\"iterations\":%u", pbkdf2_iterations);
+      fprintf(out, ",\"dk_len\":%zu", pbkdf2_dk_len);
+      fputs("}\n", out);
     }
 
     free(pw_escaped);
