@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -std=c11
 
 BIN_DIR := bin
-SRC_DIR := GitHub-Brute-Force
+SRC_DIR := src
 
 UNAME_S := $(shell uname -s)
 

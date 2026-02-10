@@ -127,6 +127,6 @@ Optional: TSV header (comment line starting with `#`, ignored by `--verify`):
 
 ## Source Files
 
-- `GitHub-Brute-Force/pwgen.c`: password generator
-- `GitHub-Brute-Force/pass2hash.c`: hash a password list
-- `GitHub-Brute-Force/brute.c`: brute-force demo (educational; requires explicit limits)
+- `src/pwgen.c`: password generator
+- `src/pass2hash.c`: hash a password list
+- `src/brute.c`: brute-force demo (educational; requires explicit limits)

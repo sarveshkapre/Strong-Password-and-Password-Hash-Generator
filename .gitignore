@@ -6,15 +6,11 @@
 *.exe
 
 # Local binaries (built outputs)
-GitHub-Brute-Force/brute
-GitHub-Brute-Force/pass2hash
 bin/
 
 # Generated logs/outputs
 log.txt
 HashofPassword.txt
-GitHub-Brute-Force/log.txt
-GitHub-Brute-Force/HashofPassword.txt
 
 # OS/editor
 .DS_Store

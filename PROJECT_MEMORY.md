@@ -9,7 +9,7 @@
 - Binaries:
 - `bin/pwgen`: cryptographically secure password generator (configurable charset/length).
 - `bin/pass2hash`: hashes a password list file (one password per line) with selectable digest algorithm; outputs TSV (v1/v2) or JSONL.
-- Crypto portability: `GitHub-Brute-Force/crypto.c` uses CommonCrypto on macOS and OpenSSL libcrypto on Linux.
+- Crypto portability: `src/crypto.c` uses CommonCrypto on macOS and OpenSSL libcrypto on Linux.
 
 ## Open Problems
 - `brute` is intentionally an educational demo; it is now safe-by-default but still not intended for large-scale cracking.

@@ -14,3 +14,5 @@ Run:
 
         ./bin/pwgen --length 32 --avoid-ambiguous
         ./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256
+
+Source code now lives in `./src/`.
