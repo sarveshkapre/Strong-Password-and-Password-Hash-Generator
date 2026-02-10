@@ -8,13 +8,13 @@
 - Build: root `Makefile` builds binaries into `./bin/`.
 - Binaries:
 - `bin/pwgen`: cryptographically secure password generator (configurable charset/length).
-- `bin/pass2hash`: hashes a password list file (one password per line) with selectable digest algorithm.
+- `bin/pass2hash`: hashes a password list file (one password per line) with selectable digest algorithm; outputs TSV (v1/v2) or JSONL.
 - Crypto portability: `GitHub-Brute-Force/crypto.c` uses CommonCrypto on macOS and OpenSSL libcrypto on Linux.
 
 ## Open Problems
 - `brute` is intentionally an educational demo; it is now safe-by-default but still not intended for large-scale cracking.
 - `pass2hash` outputs a TSV; passwords containing raw tabs make the output ambiguous unless `--escape-tsv` (or `--omit-password`) is used. The tool warns once, but consumers must opt into escaping.
-- Consider adding a structured output mode (e.g., JSONL) for robust downstream parsing.
+- JSONL verification intentionally rejects nested JSON values; this keeps the verifier small but means `--verify --input-format jsonl` is primarily intended for outputs produced by `pass2hash` itself.
 
 ## Recent Decisions
 - Template: YYYY-MM-DD | Decision | Why | Evidence (tests/logs) | Commit | Confidence (high/medium/low) | Trust (trusted/untrusted)
@@ -30,6 +30,7 @@
 - 2026-02-09 | Make `pass2hash` pipe-friendly and harden PBKDF2 flag validation | Improve CLI UX for pipelines and prevent footguns/invalid PBKDF2 parameter usage | `make test` | 7db0133 | high | trusted
 - 2026-02-09 | Add `pass2hash --escape-tsv` + warn on raw TABs | Make outputs safely parseable while keeping default behavior | `make test` | 070e749 | high | trusted
 - 2026-02-09 | Add `pass2hash --verify` mode | Provide a correctness check workflow for digest + PBKDF2 v2 outputs | `make test` | c57654b | medium | trusted
+- 2026-02-10 | Add `pass2hash` JSONL output + JSONL verify + optional TSV headers | Provide a delimiter-free output for automation, plus a matching verification path and self-describing TSV output | `make test`; `gh run watch 21847501792 --exit-status`; `gh run watch 21847559753 --exit-status` | 47ae42b, d1e68b8 | medium | trusted
 
 ## Mistakes And Fixes
 - Template: YYYY-MM-DD | Issue | Root cause | Fix | Prevention rule | Commit | Confidence
@@ -41,8 +42,8 @@
 - Entropy values are estimates (assumes uniform random selection from a simplified character pool).
 
 ## Next Prioritized Tasks
-- Consider adding a structured output mode (e.g., `pass2hash --output jsonl`) and a matching `--verify` path to avoid delimiter ambiguity entirely.
-- Consider adding optional header rows (`--header`) to make outputs self-describing for casual use.
+- Consider adding `pass2hash --no-entropy` for higher throughput pipelines (keep entropy enabled by default).
+- Consider adding a `pwgen --chars STR` mode for explicit charsets (parity with other generators).
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
@@ -61,6 +62,9 @@
 - 2026-02-09 | `gh run list -b main -L 3` | GitHub Actions `ci` shows `success` for run `21841375127` on `main` | pass
 - 2026-02-09 | `gh run watch 21841408392 --exit-status` | GitHub Actions `ci` completed `success` on `main` | pass
 - 2026-02-09 | `gh run watch 21841442428 --exit-status` | GitHub Actions `ci` completed `success` on `main` | pass
+- 2026-02-10 | `make test` | All smoke checks passed | pass
+- 2026-02-10 | `gh run watch 21847501792 --exit-status` | GitHub Actions `ci` completed `success` on `main` | pass
+- 2026-02-10 | `gh run watch 21847559753 --exit-status` | GitHub Actions `ci` completed `success` on `main` | pass
 
 ## Historical Summary
 - Keep compact summaries of older entries here when file compaction runs.

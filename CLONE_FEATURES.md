@@ -74,7 +74,7 @@
 - 2026-02-09: Made `pass2hash` pipe-friendly (`-i -`, `-o -`) and hardened PBKDF2 flag parsing/validation (strict numeric parsing, reject PBKDF2-only flags in digest mode, bound `--salt-hex`). Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `7db0133`.
 - 2026-02-09: Added `pass2hash --escape-tsv` plus a warning for raw TABs to keep TSV parseable, with smoke coverage and README notes. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `070e749`.
 - 2026-02-09: Added `pass2hash --verify` mode to validate v1/v2 TSV outputs (digest + PBKDF2 v2), including support for verifying escaped TSV inputs via `--escape-tsv`, with smoke coverage and docs. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `c57654b`.
-- 2026-02-10: Added JSONL output (`--output-format jsonl`) and JSONL verify (`--input-format jsonl`) to `pass2hash`, plus optional commented TSV headers (`--header`) and comment skipping in verify mode. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `47ae42b`.
+- 2026-02-10: Added JSONL output (`--output-format jsonl`) and JSONL verify (`--input-format jsonl`) to `pass2hash`, plus optional commented TSV headers (`--header`) and comment skipping in verify mode. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `47ae42b`, `d1e68b8`.
 
 ## Insights
 - Baseline UX expectations (external references, treat as untrusted): configurable length, character classes, “avoid ambiguous/look-alike” option, optional “minimum digits/special” constraints (ideally kept low), and (optionally) passphrase mode.
