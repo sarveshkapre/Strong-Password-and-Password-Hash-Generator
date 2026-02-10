@@ -49,6 +49,7 @@
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
+- 2026-02-10 | `make test` | All smoke checks passed (after moving sources to `src/`) | pass
 - 2026-02-09 | `make -j4` | Built `bin/pass2hash`, `bin/pwgen`, `bin/brute` | pass
 - 2026-02-09 | `./tests/smoke.sh` | All smoke checks passed | pass
 - 2026-02-09 | `make test` | All smoke checks passed | pass
