@@ -41,6 +41,15 @@
 - [x] (P1) Harden `pass2hash` CLI validation: strict numeric parsing for PBKDF2 flags and reject PBKDF2-only flags in digest mode; bound `--salt-hex` decoded size to match `--salt-len` limits; add smoke coverage. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
 - [x] (P1) Add `pass2hash --verify` mode to validate v1/v2 TSV lines (digest + PBKDF2 v2) and fail-fast on mismatch; support `--escape-tsv` for verifying escaped inputs; add smoke coverage + docs. (Impact: medium, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
 
+- Selected For This Session (Cycle 5):
+- [x] (P0) Add structured output to `pass2hash`: `--output-format jsonl` for robust downstream parsing (no delimiter ambiguity), supporting both digest and PBKDF2 modes, and respecting `--omit-password`. (Impact: high, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
+- [x] (P0) Extend `pass2hash --verify` to support JSONL via `--input-format jsonl` (rejecting JSONL lines missing required fields; fail-fast on mismatch). (Impact: high, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
+- [x] (P1) Add TSV self-describing output: `pass2hash --header` (commented `#...` header) and teach `--verify` to skip comment lines (`#`) for both TSV and JSONL. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [x] (P2) Expand `tests/smoke.sh` to cover JSONL generation + JSONL verify + header skipping behavior. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [x] (P2) Update `README.md` with JSONL examples, `--input-format/--output-format` docs, and header semantics. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P3) Optional: add `pwgen --chars STR` (explicit allowed charset) with strict validation and smoke coverage; keep existing presets as default. (Impact: low, Effort: medium, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
+- [ ] (P3) Optional: add `pass2hash --no-entropy` to omit entropy computation for throughput (still default to current behavior). (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
+
 - [x] (P0) Reproducible builds + clean repo artifacts: add root `Makefile`, add `.gitignore`, and remove committed ELF binaries + generated outputs from git. (Impact: high, Effort: low, Risk: low, Confidence: high)
 - [x] (P0) Fix crypto portability: replace broken Apple/OpenSSL preprocessor logic and implement a small `crypto` module that supports macOS (CommonCrypto) and Linux (OpenSSL libcrypto) for digests + PBKDF2. (Impact: high, Effort: medium, Risk: medium, Confidence: medium)
 - [x] (P0) Harden `pass2hash`: correct file-reading loop (no `feof`), trim newlines, close/free resources, avoid infinite growth of output file, and add CLI flags for input/output paths + algorithm selection. (Impact: high, Effort: low, Risk: low, Confidence: high)
@@ -65,12 +74,14 @@
 - 2026-02-09: Made `pass2hash` pipe-friendly (`-i -`, `-o -`) and hardened PBKDF2 flag parsing/validation (strict numeric parsing, reject PBKDF2-only flags in digest mode, bound `--salt-hex`). Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `7db0133`.
 - 2026-02-09: Added `pass2hash --escape-tsv` plus a warning for raw TABs to keep TSV parseable, with smoke coverage and README notes. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `070e749`.
 - 2026-02-09: Added `pass2hash --verify` mode to validate v1/v2 TSV outputs (digest + PBKDF2 v2), including support for verifying escaped TSV inputs via `--escape-tsv`, with smoke coverage and docs. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `c57654b`.
+- 2026-02-10: Added JSONL output (`--output-format jsonl`) and JSONL verify (`--input-format jsonl`) to `pass2hash`, plus optional commented TSV headers (`--header`) and comment skipping in verify mode. Evidence: `GitHub-Brute-Force/pass2hash.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `47ae42b`.
 
 ## Insights
 - Baseline UX expectations (external references, treat as untrusted): configurable length, character classes, “avoid ambiguous/look-alike” option, optional “minimum digits/special” constraints (ideally kept low), and (optionally) passphrase mode.
 - Passphrase UX expectations (external references, treat as untrusted): word count, separator, optional capitalization, and optionally “include a number” in one word; tools often display a strength/entropy estimate and allow very low minimums but recommend 4+ words.
 - Password hashing expectations (external references, treat as untrusted): for password storage, prefer memory-hard KDFs (Argon2id/scrypt) or bcrypt; if PBKDF2 is used, iteration counts should vary by PRF and be high enough to slow offline guessing; store salt+parameters alongside the hash to enable future upgrades.
 - Password policy expectations (external references, treat as untrusted): for user-chosen passwords, prefer length + blocklist checks over composition rules; support long passwords (64+), accept all printing ASCII (including space), and avoid forced periodic rotation unless compromise is suspected.
+- CLI expectations (external references, treat as untrusted): machine-readable outputs (JSON or JSONL) are a common opt-in for automation; generators typically offer length, character groups, exclude-similar, and passphrase options.
 - References:
 - https://bitwarden.com/help/generator/
 - https://bitwarden.com/passphrase-generator/
@@ -78,6 +89,9 @@
 - https://keepass.info/help/base/pwgenerator.html
 - https://support.keepassium.com/docs/password-generator/
 - https://1password.com/password-generator/
+- https://bitwarden.com/help/cli/
+- https://developer.1password.com/docs/cli/reference/
+- https://manpages.debian.org/testing/keepassxc/keepassxc-cli.1.en.html
 - https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
 - https://pages.nist.gov/800-63-4/sp800-63b.html
 

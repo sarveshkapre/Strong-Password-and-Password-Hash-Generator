@@ -48,6 +48,12 @@ Piping (stdin/stdout):
 printf "password\n" | ./bin/pass2hash -i - --algo sha256
 ```
 
+JSONL output (one JSON object per password; easiest for robust downstream parsing):
+
+```sh
+./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256 --output-format jsonl
+```
+
 PBKDF2 (slow KDF, recommended if you are storing password hashes):
 
 ```sh
@@ -74,6 +80,8 @@ password<TAB>algo<TAB>hash_hex<TAB>entropy_bits
 
 If your input passwords may contain tabs, the output TSV becomes ambiguous. Prefer `--omit-password` (safest) or `--escape-tsv` (escapes the password field with `\\t`, `\\n`, `\\r`, `\\\\`).
 
+If you need a delimiter-free format for downstream parsing, use `--output-format jsonl`.
+
 If you are generating hashes for storage, prefer `--omit-password` to avoid emitting plaintext passwords in the output:
 
 ```sh
@@ -91,6 +99,18 @@ Verify an output TSV (recompute and compare, exits non-zero on mismatch):
 ```sh
 ./bin/pass2hash --verify -i hashes.tsv
 ./bin/pass2hash --verify -i hashes.tsv --escape-tsv
+```
+
+Verify an output JSONL (recompute and compare, exits non-zero on mismatch):
+
+```sh
+./bin/pass2hash --verify -i hashes.jsonl --input-format jsonl
+```
+
+Optional: TSV header (comment line starting with `#`, ignored by `--verify`):
+
+```sh
+./bin/pass2hash -i GitHub-Brute-Force/passwordfile.txt --algo sha256 --header > hashes.tsv
 ```
 
 ## Security Notes
