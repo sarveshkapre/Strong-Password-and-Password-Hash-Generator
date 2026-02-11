@@ -7,6 +7,22 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
+- Selected For This Session (Global Cycle 1, 2026-02-11):
+- [x] (P0) Add `pwgen --exclude STR` to remove disallowed characters from the effective pool (works with both default class-based pools and `--chars`), with strict rejection of control characters. (Impact: high, Effort: low, Strategic fit: high, Differentiation: medium, Risk: low, Confidence: high)
+- [x] (P0) Add explicit composition constraints to `pwgen`: `--min-lower N`, `--min-upper N`, `--min-digits N`, `--min-symbols N`, including conflict checks with `--length`, `--chars`, and `--require-each`. (Impact: high, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: medium)
+- [x] (P1) Extend smoke tests and docs for the new `pwgen` policy flags with both success and failure coverage. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P1) Add `pwgen --output-format plain|jsonl` for machine-readable generation metadata (value + entropy + mode). (Impact: medium, Effort: medium, Strategic fit: medium, Differentiation: medium, Risk: medium, Confidence: medium)
+- [ ] (P1) Add PBKDF2 PHC-string output mode in `pass2hash` for interoperable password-hash storage strings. (Impact: high, Effort: medium, Strategic fit: high, Differentiation: medium, Risk: medium, Confidence: low)
+- [ ] (P1) Add `pass2hash --skip-empty` to avoid hashing accidental blank lines in pipeline/list inputs. (Impact: medium, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P1) Add deterministic `pwgen --seed HEX` test-only mode behind an explicit unsafe flag for reproducible fixture generation. (Impact: low, Effort: medium, Strategic fit: low, Differentiation: low, Risk: medium, Confidence: medium)
+- [ ] (P2) Add fuzz-like randomized regression tests for `pass2hash --verify --input-format jsonl` parser robustness. (Impact: medium, Effort: medium, Strategic fit: high, Differentiation: low, Risk: low, Confidence: medium)
+- [ ] (P2) Add `make lint` (`-Werror`) and wire it into CI to tighten compile-time quality gates. (Impact: medium, Effort: low, Strategic fit: high, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P2) Add `shellcheck` coverage for `tests/smoke.sh` in CI (best-effort on Ubuntu). (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P2) Add micro-benchmark scripts for `pwgen` and `pass2hash` throughput baselines under `examples/` or `scripts/`. (Impact: low, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
+- [ ] (P2) Shorten `README.md` to a 1-2 screen quickstart and move deep option details to a dedicated docs page. (Impact: medium, Effort: low, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: high)
+- [ ] (P3) Add optional Unicode-aware passphrase word normalization mode (NFKC) for imported wordlists. (Impact: low, Effort: medium, Strategic fit: low, Differentiation: low, Risk: medium, Confidence: low)
+- [ ] (P3) Add release packaging metadata and checksum automation for tagged builds. (Impact: low, Effort: medium, Strategic fit: medium, Differentiation: low, Risk: low, Confidence: medium)
+
 - Selected For This Session (Cycle 1):
 - [x] Reproducible builds + clean repo artifacts
 - [x] Fix crypto portability
@@ -62,6 +78,7 @@
 - [x] (P2) Improve brute-force demo safety: require explicit `--max`/`--length` to prevent accidental massive runs; clarify this is educational only. (Impact: low, Effort: low, Risk: low, Confidence: high)
 
 ## Implemented
+- 2026-02-11: Added `pwgen --exclude` and per-class minimum constraints (`--min-lower`, `--min-upper`, `--min-digits`, `--min-symbols`) with strict compatibility validation, plus smoke coverage and README updates. Evidence: `src/pwgen.c`, `tests/smoke.sh`, `README.md`, `make test`, `./bin/pwgen --length 16 --count 3 --exclude 'O0Il1{}[]' --min-lower 2 --min-upper 2 --min-digits 2 --min-symbols 1 --show-entropy`. Commits: pending.
 - 2026-02-09: Cleaned repository artifacts (removed committed ELF binaries, moved generated output to example, added `.gitignore`). Evidence: `.gitignore`, `examples/HashofPassword.example.txt`. Commits: `14c97f5`.
 - 2026-02-09: Added portable crypto layer + reproducible build; fixed `pass2hash` correctness/CLI; ensured macOS builds via CommonCrypto and Linux builds via OpenSSL (`libcrypto`). Evidence: `Makefile`, `src/crypto.c`, `src/pass2hash.c`, `make -j4`. Commits: `214a9e0`.
 - 2026-02-09: Added `pwgen` (secure RNG) and runnable smoke tests hooked into `make test`. Evidence: `src/pwgen.c`, `tests/smoke.sh`, `make test`. Commits: `2ab592b`.
@@ -81,6 +98,9 @@
 - 2026-02-10: Added `pwgen --chars STR` for explicit custom character sets (validated + de-duplicated, respects `--avoid-ambiguous`, and enforces `--require-each` by available categories), plus smoke coverage and docs. Evidence: `src/pwgen.c`, `tests/smoke.sh`, `README.md`, `make test`. Commits: `8f07b67`.
 
 ## Insights
+- Market scan (2026-02-11, external references treated as untrusted): KeePassXC CLI exposes both `--exclude` and `--every-group` (minimum-per-group style) options, which map closely to the new `pwgen` constraints shipped this cycle.
+- Market scan (2026-02-11, external references treated as untrusted): Bitwarden CLI (`bw generate`) supports password and passphrase generation modes, reinforcing parity value for keeping both modes first-class in this repo.
+- Gap map (2026-02-11, untrusted market + trusted local code): missing -> explicit exclusion and minimum class controls in `pwgen` (now addressed this cycle); weak -> interoperable KDF storage strings (PHC-style) in `pass2hash`; parity -> secure RNG, passphrase mode, JSONL outputs, verification path; differentiator -> built-in hash output verification and strict TSV/JSONL parsing modes.
 - Baseline UX expectations (external references, treat as untrusted): configurable length, character classes, “avoid ambiguous/look-alike” option, optional “minimum digits/special” constraints (ideally kept low), and (optionally) passphrase mode.
 - Passphrase UX expectations (external references, treat as untrusted): word count, separator, optional capitalization, and optionally “include a number” in one word; tools often display a strength/entropy estimate and allow very low minimums but recommend 4+ words.
 - Custom charset UX expectations (external references, treat as untrusted): allow explicit “character set” input; treat it as a set (ignore duplicates) and reject tabs/newlines to keep output parseable.

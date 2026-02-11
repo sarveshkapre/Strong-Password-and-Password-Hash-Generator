@@ -235,6 +235,35 @@ while IFS= read -r pw; do
   [[ "$pw" == "aaaa" ]] || { echo "expected aaaa, got: $pw"; exit 1; }
 done < <(./bin/pwgen --length 4 --count 10 --chars 'O0Il1a' --avoid-ambiguous)
 
+echo "[smoke] pwgen --exclude removes disallowed characters"
+excluded='abcXYZ09!@'
+while IFS= read -r pw; do
+  [[ ${#pw} -eq 24 ]] || { echo "bad length: ${#pw}"; exit 1; }
+  [[ "$pw" != *a* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *b* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *c* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *X* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *Y* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *Z* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *0* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *9* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *\!* ]] || { echo "found excluded char in: $pw"; exit 1; }
+  [[ "$pw" != *\@* ]] || { echo "found excluded char in: $pw"; exit 1; }
+done < <(./bin/pwgen --length 24 --count 40 --exclude "$excluded")
+
+echo "[smoke] pwgen minimum class constraints"
+while IFS= read -r pw; do
+  [[ "$pw" =~ ^[abcDEF12$%]+$ ]] || { echo "unexpected char in: $pw"; exit 1; }
+  lower_only="${pw//[^a-z]/}"
+  upper_only="${pw//[^A-Z]/}"
+  digit_only="${pw//[^0-9]/}"
+  symbol_only="${pw//[[:alnum:]]/}"
+  [[ ${#lower_only} -ge 2 ]] || { echo "min-lower violated: $pw"; exit 1; }
+  [[ ${#upper_only} -ge 3 ]] || { echo "min-upper violated: $pw"; exit 1; }
+  [[ ${#digit_only} -ge 2 ]] || { echo "min-digits violated: $pw"; exit 1; }
+  [[ ${#symbol_only} -ge 1 ]] || { echo "min-symbols violated: $pw"; exit 1; }
+done < <(./bin/pwgen --length 14 --count 40 --chars 'abcDEF12$%' --no-require-each --min-lower 2 --min-upper 3 --min-digits 2 --min-symbols 1)
+
 echo "[smoke] pwgen passphrase mode (wordlist-based)"
 cat >"$tmp/words.txt" <<'EOF'
 alpha
@@ -258,6 +287,30 @@ if ./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --words 4x >/dev/null 2>
 fi
 if ./bin/pwgen --length 10 --chars $'ab\tc' >/dev/null 2>&1; then
   echo "expected pwgen to fail for --chars containing a TAB"
+  exit 1
+fi
+if ./bin/pwgen --length 10 --exclude $'ab\tc' >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --exclude containing a TAB"
+  exit 1
+fi
+if ./bin/pwgen --length 4 --chars abc --exclude abc >/dev/null 2>&1; then
+  echo "expected pwgen to fail when --exclude removes all characters"
+  exit 1
+fi
+if ./bin/pwgen --length 8 --chars abc --no-require-each --min-digits 1 >/dev/null 2>&1; then
+  echo "expected pwgen to fail for unavailable --min-digits class"
+  exit 1
+fi
+if ./bin/pwgen --length 3 --no-require-each --min-lower 2 --min-upper 2 >/dev/null 2>&1; then
+  echo "expected pwgen to fail when min constraints exceed length"
+  exit 1
+fi
+if ./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --exclude x >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --passphrase with --exclude"
+  exit 1
+fi
+if ./bin/pwgen --passphrase --wordlist "$tmp/words.txt" --min-digits 1 >/dev/null 2>&1; then
+  echo "expected pwgen to fail for --passphrase with min class constraints"
   exit 1
 fi
 

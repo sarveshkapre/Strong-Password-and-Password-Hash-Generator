@@ -7,7 +7,7 @@
 - Language: C (single-repo utilities).
 - Build: root `Makefile` builds binaries into `./bin/`.
 - Binaries:
-- `bin/pwgen`: cryptographically secure password generator (configurable charset/length).
+- `bin/pwgen`: cryptographically secure password/passphrase generator (configurable charset/length, exclusion list, and per-class minimum constraints).
 - `bin/pass2hash`: hashes a password list file (one password per line) with selectable digest algorithm; outputs TSV (v1/v2) or JSONL.
 - Crypto portability: `src/crypto.c` uses CommonCrypto on macOS and OpenSSL libcrypto on Linux.
 
@@ -33,6 +33,7 @@
 - 2026-02-10 | Add `pass2hash` JSONL output + JSONL verify + optional TSV headers | Provide a delimiter-free output for automation, plus a matching verification path and self-describing TSV output | `make test`; `gh run watch 21847501792 --exit-status`; `gh run watch 21847559753 --exit-status` | 47ae42b, d1e68b8 | medium | trusted
 - 2026-02-10 | Add `pass2hash --no-entropy` | Improve throughput for pipeline use-cases by skipping entropy estimation (while keeping output schema stable) | `make test`; `gh run watch 21853087071 --exit-status` | 294b097 | high | trusted
 - 2026-02-10 | Add `pwgen --chars STR` | Provide explicit/custom character set support (parity with generators) while keeping default presets unchanged | `make test`; `gh run watch 21853155756 --exit-status` | 8f07b67 | high | trusted
+- 2026-02-11 | Add `pwgen --exclude` and per-class minimum constraints | Improve real-world password policy compatibility without weakening RNG or defaults | `make test`; `./bin/pwgen --length 16 --count 3 --exclude 'O0Il1{}[]' --min-lower 2 --min-upper 2 --min-digits 2 --min-symbols 1 --show-entropy` | pending | high | trusted
 
 ## Mistakes And Fixes
 - Template: YYYY-MM-DD | Issue | Root cause | Fix | Prevention rule | Commit | Confidence
@@ -44,8 +45,9 @@
 - Entropy values are estimates (assumes uniform random selection from a simplified character pool).
 
 ## Next Prioritized Tasks
-- Consider adding `pwgen --exclude STR` for quickly removing problematic characters from the default pool (keep `--avoid-ambiguous` as a preset).
 - Consider adding a PBKDF2 PHC-string output mode for `pass2hash` (portable storage format that embeds algo+params+salt).
+- Consider adding `pwgen --output-format jsonl` for automation-friendly downstream parsing.
+- Consider splitting long-form CLI docs out of `README.md` into a dedicated `docs/` page to keep README skimmable.
 
 ## Verification Evidence
 - Template: YYYY-MM-DD | Command | Key output | Status (pass/fail)
@@ -73,6 +75,8 @@
 - 2026-02-10 | `make test` | All smoke checks passed | pass
 - 2026-02-10 | `gh run watch 21853155756 --exit-status` | GitHub Actions `ci` completed `success` on `main` | pass
 - 2026-02-10 | `gh run watch 21853192257 --exit-status` | GitHub Actions `ci` completed `success` on `main` | pass
+- 2026-02-11 | `make test` | All smoke checks passed (including new `pwgen --exclude` and min-class constraints tests) | pass
+- 2026-02-11 | `./bin/pwgen --length 16 --count 3 --exclude 'O0Il1{}[]' --min-lower 2 --min-upper 2 --min-digits 2 --min-symbols 1 --show-entropy` | Generated 3 passwords with entropy output and exit code 0 | pass
 
 ## Historical Summary
 - Keep compact summaries of older entries here when file compaction runs.

@@ -28,7 +28,11 @@ Generate strong passwords (cryptographically secure RNG):
 ./bin/pwgen --length 32 --avoid-ambiguous
 ./bin/pwgen --length 20 --count 5 --show-entropy
 ./bin/pwgen --length 24 --chars 'abcdef0123456789' --show-entropy
+./bin/pwgen --length 24 --exclude 'O0Il1{}[]' --show-entropy
+./bin/pwgen --length 16 --min-lower 2 --min-upper 2 --min-digits 2 --min-symbols 1
 ```
+
+`pwgen` supports policy-style minimums (`--min-lower/--min-upper/--min-digits/--min-symbols`) and an explicit deny-list (`--exclude STR`) for sites that reject certain characters.
 
 Generate passphrases (wordlist-based):
 

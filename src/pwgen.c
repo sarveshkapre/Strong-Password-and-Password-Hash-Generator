@@ -14,11 +14,14 @@ static void usage(const char *argv0) {
   fprintf(stderr,
           "Usage: %s [--length N] [--count N] [--lower|--no-lower] [--upper|--no-upper]\n"
           "          [--digits|--no-digits] [--symbols|--no-symbols] [--avoid-ambiguous]\n"
-          "          [--chars STR] [--require-each|--no-require-each] [--show-entropy]\n"
+          "          [--chars STR] [--exclude STR] [--require-each|--no-require-each]\n"
+          "          [--min-lower N] [--min-upper N] [--min-digits N] [--min-symbols N]\n"
+          "          [--show-entropy]\n"
           "       %s --passphrase --wordlist PATH [--words N] [--separator STR]\n"
           "          [--capitalize] [--include-number] [--count N] [--show-entropy]\n"
           "\n"
-          "Defaults (password): length=20, count=1, lower/upper/digits/symbols enabled, require-each enabled.\n"
+          "Defaults (password): length=20, count=1, lower/upper/digits/symbols enabled, require-each enabled,\n"
+          "                     min-lower/min-upper/min-digits/min-symbols=0.\n"
           "Defaults (passphrase): words=4, separator='-', capitalize disabled, include-number disabled.\n"
           "Output: one value per line. With --show-entropy: value<TAB>entropy_bits\n",
           argv0, argv0);
@@ -71,10 +74,22 @@ static void remove_chars(char *set, const char *remove) {
   set[w] = '\0';
 }
 
+static int has_unsupported_chars(const char *s) {
+  if (!s)
+    return 0;
+  for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+    if (*p == '\t' || *p == '\n' || *p == '\r' || iscntrl(*p))
+      return 1;
+  }
+  return 0;
+}
+
 static int build_pool_from_chars(const char *chars, int avoid_ambiguous, char *out,
                                  size_t out_cap) {
   if (!chars || !out || out_cap == 0)
     return -1;
+  if (has_unsupported_chars(chars))
+    return -2;
 
   uint8_t seen[256];
   memset(seen, 0, sizeof(seen));
@@ -82,8 +97,6 @@ static int build_pool_from_chars(const char *chars, int avoid_ambiguous, char *o
   size_t w = 0;
   for (const unsigned char *p = (const unsigned char *)chars; *p; p++) {
     unsigned char c = *p;
-    if (c == '\t' || c == '\n' || c == '\r' || iscntrl(c))
-      return -2;
     if (!seen[c]) {
       if (w + 1 >= out_cap)
         return -1;
@@ -146,6 +159,22 @@ static int shuffle_indices(size_t *a, size_t len) {
     size_t tmp = a[i];
     a[i] = a[j];
     a[j] = tmp;
+  }
+  return 0;
+}
+
+static int assign_required_chars(char *out, const char *set, size_t set_len, size_t count,
+                                 const size_t *positions, size_t *pidx) {
+  if (count == 0)
+    return 0;
+  if (!out || !set || set_len == 0 || !positions || !pidx)
+    return -1;
+  for (size_t i = 0; i < count; i++) {
+    size_t idx = 0;
+    if (rand_index(set_len, &idx) != 0)
+      return -1;
+    size_t pos = positions[(*pidx)++];
+    out[pos] = set[idx];
   }
   return 0;
 }
@@ -290,6 +319,7 @@ int main(int argc, char **argv) {
   int avoid_ambiguous = 0;
   int require_each = 1;
   int show_entropy = 0;
+  size_t min_lower = 0, min_upper = 0, min_digits = 0, min_symbols = 0;
 
   int passphrase = 0;
   const char *wordlist_path = NULL;
@@ -298,6 +328,7 @@ int main(int argc, char **argv) {
   int capitalize = 0;
   int include_number = 0;
   const char *custom_chars = NULL;
+  const char *exclude_chars = NULL;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--length") == 0 && i + 1 < argc) {
@@ -354,12 +385,44 @@ int main(int argc, char **argv) {
       custom_chars = argv[++i];
       continue;
     }
+    if (strcmp(argv[i], "--exclude") == 0 && i + 1 < argc) {
+      exclude_chars = argv[++i];
+      continue;
+    }
     if (strcmp(argv[i], "--require-each") == 0) {
       require_each = 1;
       continue;
     }
     if (strcmp(argv[i], "--no-require-each") == 0) {
       require_each = 0;
+      continue;
+    }
+    if (strcmp(argv[i], "--min-lower") == 0 && i + 1 < argc) {
+      if (parse_size_strict(argv[++i], 0, 4096, &min_lower) != 0) {
+        fprintf(stderr, "Invalid --min-lower value (0..4096).\n");
+        return 2;
+      }
+      continue;
+    }
+    if (strcmp(argv[i], "--min-upper") == 0 && i + 1 < argc) {
+      if (parse_size_strict(argv[++i], 0, 4096, &min_upper) != 0) {
+        fprintf(stderr, "Invalid --min-upper value (0..4096).\n");
+        return 2;
+      }
+      continue;
+    }
+    if (strcmp(argv[i], "--min-digits") == 0 && i + 1 < argc) {
+      if (parse_size_strict(argv[++i], 0, 4096, &min_digits) != 0) {
+        fprintf(stderr, "Invalid --min-digits value (0..4096).\n");
+        return 2;
+      }
+      continue;
+    }
+    if (strcmp(argv[i], "--min-symbols") == 0 && i + 1 < argc) {
+      if (parse_size_strict(argv[++i], 0, 4096, &min_symbols) != 0) {
+        fprintf(stderr, "Invalid --min-symbols value (0..4096).\n");
+        return 2;
+      }
       continue;
     }
     if (strcmp(argv[i], "--show-entropy") == 0) {
@@ -414,6 +477,14 @@ int main(int argc, char **argv) {
   if (passphrase) {
     if (custom_chars) {
       fprintf(stderr, "--chars is not valid with --passphrase.\n");
+      return 2;
+    }
+    if (exclude_chars) {
+      fprintf(stderr, "--exclude is not valid with --passphrase.\n");
+      return 2;
+    }
+    if (min_lower > 0 || min_upper > 0 || min_digits > 0 || min_symbols > 0) {
+      fprintf(stderr, "--min-lower/--min-upper/--min-digits/--min-symbols are not valid with --passphrase.\n");
       return 2;
     }
     if (!wordlist_path) {
@@ -534,6 +605,10 @@ int main(int argc, char **argv) {
 
   char custom_lower[256], custom_upper[256], custom_digits[256], custom_symbols[256];
   custom_lower[0] = custom_upper[0] = custom_digits[0] = custom_symbols[0] = '\0';
+  if (exclude_chars && has_unsupported_chars(exclude_chars)) {
+    fprintf(stderr, "--exclude contains unsupported characters (no tabs/newlines/control chars).\n");
+    return 2;
+  }
 
   if (custom_chars) {
     int rc = build_pool_from_chars(custom_chars, avoid_ambiguous, pool, sizeof(pool));
@@ -543,6 +618,12 @@ int main(int argc, char **argv) {
     }
     if (rc != 0) {
       fprintf(stderr, "--chars must contain at least one usable character.\n");
+      return 2;
+    }
+    if (exclude_chars)
+      remove_chars(pool, exclude_chars);
+    if (pool[0] == '\0') {
+      fprintf(stderr, "No characters remain after applying --exclude.\n");
       return 2;
     }
     build_category_sets(pool, custom_lower, custom_upper, custom_digits, custom_symbols);
@@ -560,6 +641,12 @@ int main(int argc, char **argv) {
       remove_chars(lower, "l");
       remove_chars(upper, "IO");
       remove_chars(digits, "01");
+    }
+    if (exclude_chars) {
+      remove_chars(lower, exclude_chars);
+      remove_chars(upper, exclude_chars);
+      remove_chars(digits, exclude_chars);
+      remove_chars(symbols, exclude_chars);
     }
 
     if (use_lower)
@@ -581,26 +668,48 @@ int main(int argc, char **argv) {
     symbols_len = use_symbols ? strlen(symbols) : 0;
   }
 
+  if (min_lower > 0 && lower_len == 0) {
+    fprintf(stderr, "Cannot satisfy --min-lower with the current character pool.\n");
+    return 2;
+  }
+  if (min_upper > 0 && upper_len == 0) {
+    fprintf(stderr, "Cannot satisfy --min-upper with the current character pool.\n");
+    return 2;
+  }
+  if (min_digits > 0 && digits_len == 0) {
+    fprintf(stderr, "Cannot satisfy --min-digits with the current character pool.\n");
+    return 2;
+  }
+  if (min_symbols > 0 && symbols_len == 0) {
+    fprintf(stderr, "Cannot satisfy --min-symbols with the current character pool.\n");
+    return 2;
+  }
+
   size_t pool_len = strlen(pool);
   if (pool_len == 0) {
     fprintf(stderr, "No characters available for generation.\n");
     return 2;
   }
 
-  size_t required_classes = 0;
+  size_t req_lower = min_lower;
+  size_t req_upper = min_upper;
+  size_t req_digits = min_digits;
+  size_t req_symbols = min_symbols;
   if (require_each) {
-    if (lower_len > 0)
-      required_classes++;
-    if (upper_len > 0)
-      required_classes++;
-    if (digits_len > 0)
-      required_classes++;
-    if (symbols_len > 0)
-      required_classes++;
-    if (length < required_classes) {
-      fprintf(stderr, "--length must be >= number of available classes when --require-each is set.\n");
-      return 2;
-    }
+    if (lower_len > 0 && req_lower == 0)
+      req_lower = 1;
+    if (upper_len > 0 && req_upper == 0)
+      req_upper = 1;
+    if (digits_len > 0 && req_digits == 0)
+      req_digits = 1;
+    if (symbols_len > 0 && req_symbols == 0)
+      req_symbols = 1;
+  }
+  size_t total_required = req_lower + req_upper + req_digits + req_symbols;
+  if (total_required > length) {
+    fprintf(stderr, "Sum of minimum class requirements (%zu) must be <= --length (%zu).\n",
+            total_required, length);
+    return 2;
   }
 
   char *out = (char *)calloc(length + 1, 1);
@@ -610,7 +719,7 @@ int main(int argc, char **argv) {
   }
 
   size_t *positions = NULL;
-  if (require_each) {
+  if (total_required > 0) {
     positions = (size_t *)calloc(length, sizeof(size_t));
     if (!positions) {
       perror("calloc");
@@ -625,6 +734,7 @@ int main(int argc, char **argv) {
       size_t idx = 0;
       if (rand_index(pool_len, &idx) != 0) {
         fprintf(stderr, "Random generation failed.\n");
+        free(positions);
         free(out);
         return 1;
       }
@@ -632,8 +742,8 @@ int main(int argc, char **argv) {
     }
     out[length] = '\0';
 
-    // Enforce at least one from each enabled class by overwriting random positions.
-    if (require_each) {
+    // Enforce minimum class counts by overwriting random positions.
+    if (total_required > 0) {
       for (size_t i = 0; i < length; i++)
         positions[i] = i;
       if (shuffle_indices(positions, length) != 0) {
@@ -644,49 +754,18 @@ int main(int argc, char **argv) {
       }
 
       size_t pidx = 0;
-      if (lower_len > 0) {
-        size_t pos = positions[pidx++];
-        size_t idx = 0;
-        if (rand_index(lower_len, &idx) != 0) {
-          fprintf(stderr, "Random generation failed.\n");
-          free(positions);
-          free(out);
-          return 1;
-        }
-        out[pos] = lower_set[idx];
-      }
-      if (upper_len > 0) {
-        size_t pos = positions[pidx++];
-        size_t idx = 0;
-        if (rand_index(upper_len, &idx) != 0) {
-          fprintf(stderr, "Random generation failed.\n");
-          free(positions);
-          free(out);
-          return 1;
-        }
-        out[pos] = upper_set[idx];
-      }
-      if (digits_len > 0) {
-        size_t pos = positions[pidx++];
-        size_t idx = 0;
-        if (rand_index(digits_len, &idx) != 0) {
-          fprintf(stderr, "Random generation failed.\n");
-          free(positions);
-          free(out);
-          return 1;
-        }
-        out[pos] = digits_set[idx];
-      }
-      if (symbols_len > 0) {
-        size_t pos = positions[pidx++];
-        size_t idx = 0;
-        if (rand_index(symbols_len, &idx) != 0) {
-          fprintf(stderr, "Random generation failed.\n");
-          free(positions);
-          free(out);
-          return 1;
-        }
-        out[pos] = symbols_set[idx];
+      if (assign_required_chars(out, lower_set, lower_len, req_lower, positions, &pidx) !=
+              0 ||
+          assign_required_chars(out, upper_set, upper_len, req_upper, positions, &pidx) !=
+              0 ||
+          assign_required_chars(out, digits_set, digits_len, req_digits, positions,
+                                &pidx) != 0 ||
+          assign_required_chars(out, symbols_set, symbols_len, req_symbols, positions,
+                                &pidx) != 0) {
+        fprintf(stderr, "Random generation failed.\n");
+        free(positions);
+        free(out);
+        return 1;
       }
 
       // Shuffle to avoid having the "required" characters correlated with selection order.
