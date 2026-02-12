@@ -320,3 +320,14 @@
 - Evidence: pass_log=logs/20260212-101456-Strong-Password-and-Password-Hash-Generator-cycle-29.log
 - Commit: pending
 - Confidence: medium
+
+### 2026-02-12T21:38:57Z | Codex execution failure
+- Date: 2026-02-12T21:38:57Z
+- Trigger: Codex execution failure
+- Impact: Repo session did not complete cleanly
+- Root Cause: codex exec returned a non-zero status
+- Fix: Captured failure logs and kept repository in a recoverable state
+- Prevention Rule: Re-run with same pass context and inspect pass log before retrying
+- Evidence: pass_log=logs/20260212-101456-Strong-Password-and-Password-Hash-Generator-cycle-30.log
+- Commit: pending
+- Confidence: medium
